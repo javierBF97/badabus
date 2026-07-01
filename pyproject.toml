@@ -1,0 +1,14 @@
+[project]
+name = "badabus"
+version = "0.1.0"
+description = "Proyecto exploratorio, no oficial, sobre los datos del servicio de autobús urbano de Badajoz."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
