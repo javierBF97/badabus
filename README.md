@@ -21,13 +21,39 @@ al usar la web se identificaron sus endpoints:
 - `?action=tiempos&parada=<id>` — próximas llegadas a una parada (en vivo).
 - `?action=correspondencias&linea=<id>` — transbordos por parada y tipo de día.
 
-`badabus/bus_data_api.py` reproduce esas mismas peticiones GET.
+`badabus/bus_data_api.py` reproduce las peticiones GET de `lineas`, `paradas` y
+`tiempos`. `correspondencias` se documenta como hallazgo, pero **no se usa**: los
+transbordos se deducen de las líneas que pasan por cada parada.
 
 ## Uso
 `badabus/collector.py` descarga las líneas y sus paradas y guarda la red en `data/`
 (`paradas.json`, `lineas.json`, `red.json`). Para (re)generar los datos:
 ```
 python -m badabus.collector
+```
+
+## Servidor
+`badabus/server.py` levanta un servidor local (`http.server`, escuchando solo en
+`127.0.0.1`) con dos rutas:
+
+- `GET /data/<paradas|lineas|red>.json` — sirve la red generada por el recolector.
+- `GET /api/parada/<id>` — próximas llegadas a una parada (dato en vivo).
+
+Arrancarlo:
+```
+python -m badabus.server
+```
+
+### El servidor actúa como proxy para evitar el CORS
+
+```
+[Navegador: página en localhost:8000]
+        │  fetch("/api/parada/202")   ← MISMO origen (localhost:8000) → permitido sin más
+        ▼
+[Nuestro servidor Python en localhost:8000]
+        │  urllib → https://tubasa.autobus.cloud/...   ← servidor→servidor, SIN navegador → sin CORS
+        ▼
+[API del servicio]  →  responde los datos  →  el servidor se los devuelve a la página
 ```
 
 ## Aviso
