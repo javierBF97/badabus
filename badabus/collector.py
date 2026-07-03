@@ -6,26 +6,29 @@ from pathlib import Path
 from badabus import bus_data_api as api
 
 
-def collect(fetch: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict, dict]:
+def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict, dict]:
     """Descarga líneas y sus paradas; devuelve (paradas únicas, meta de líneas, recorridos).
 
     - paradas: dedup por stop_code, con las líneas que la sirven.
     - meta: {lin: {color, nombre}}.
     - red: {lin: [stop_code en orden de recorrido]}.
     """
-    lineas = api.fetch_json("lineas", fetch=fetch)
+    lineas = api.fetch_json("lineas", fetcher=fetcher)
     by_code: dict[str, dict] = {}
     red: dict[str, list[str]] = {}
     for linea in lineas:
         try:
-            paradas = api.fetch_json("paradas", fetch=fetch, linea=linea["id"])
+            paradas = api.fetch_json("paradas", fetcher=fetcher, linea=linea["id"])
         except (OSError, ValueError) as exc:
             print(f"  ! fallo en línea {linea['id']}: {exc}")
             continue
+        validas = [p for p in paradas if parada_valida(p)]
+        if len(validas) < len(paradas):
+            print(f"  ! línea {linea['lin']}: {len(paradas) - len(validas)} paradas con datos inválidos, omitidas")
         red[linea["lin"]] = [
-            p["stop_code"] for p in sorted(paradas, key=lambda p: int(p["secuencia"]))
+            p["stop_code"] for p in sorted(validas, key=lambda p: int(p["secuencia"]))
         ]
-        for p in paradas:
+        for p in validas:
             stop = by_code.setdefault(p["stop_code"], {
                 "id": p["stop_code"],
                 "nombre": p["stop_name"],
@@ -60,7 +63,20 @@ def main() -> None:
     print(f"Guardadas {len(stops)} paradas, {len(meta)} líneas y {len(red)} recorridos en {data_dir}")
 
 
+def parada_valida(parada: dict) -> bool:
+    """True si la parada trae los campos mínimos y parseables para construir la red."""
+    try:
+        int(parada["secuencia"])
+        float(parada["lat"])
+        float(parada["lon"])
+    except (KeyError, ValueError, TypeError):
+        return False
+    return bool(parada.get("stop_code") and parada.get("stop_name"))
+
+
 def natural_key(name: str) -> tuple[int, list[tuple[int, int, str]]]:
+    if not name:
+        return (2, [])
     parts = re.findall(r"\d+|\D+", name)
     key = [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts]
     lead = 0 if name[:1].isdigit() else 1

@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -35,7 +37,7 @@ def fake(url, timeout=10):
 
 class TestCollect(unittest.TestCase):
     def test_builds_stops_meta_and_red(self):
-        stops, meta, red = collector.collect(fetch=fake)
+        stops, meta, red = collector.collect(fetcher=fake)
         by_id = {s["id"]: s for s in stops}
         self.assertEqual(sorted(by_id), ["1844", "202"])
         self.assertEqual(by_id["202"]["lineas"], ["2", "M2"])
@@ -47,6 +49,34 @@ class TestCollect(unittest.TestCase):
     def test_natural_key_orders_lines(self):
         names = ["M2", "2", "11", "C1", "9F", "9"]
         self.assertEqual(sorted(names, key=collector.natural_key), ["2", "9", "9F", "11", "C1", "M2"])
+
+    def test_natural_key_empty_sorts_last(self):
+        self.assertEqual(sorted(["M2", "", "2"], key=collector.natural_key), ["2", "M2", ""])
+
+    def test_parada_valida(self):
+        ok = {"stop_code": "1", "stop_name": "X", "lat": "38.8", "lon": "-6.9", "secuencia": "2"}
+        self.assertTrue(collector.parada_valida(ok))
+        self.assertFalse(collector.parada_valida({**ok, "lat": "abc"}))
+        self.assertFalse(collector.parada_valida({"stop_code": "1"}))
+
+    def test_skips_invalid_stops(self):
+        paradas_mixtas = (
+            b'{"ok":true,"data":['
+            b'{"stop_code":"1","stop_name":"Buena","lat":"38.8","lon":"-6.9","sentido":"1","secuencia":"1"},'
+            b'{"stop_code":"2","stop_name":"Mala","lat":"nan?","lon":"-6.9","sentido":"1","secuencia":"2"}]}'
+        )
+
+        def fake_mixto(url, timeout=10):
+            if "action=lineas" in url:
+                return LINEAS
+            return paradas_mixtas
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            stops, _, red = collector.collect(fetcher=fake_mixto)
+        ids = {s["id"] for s in stops}
+        self.assertIn("1", ids)
+        self.assertNotIn("2", ids)
+        self.assertEqual(red["2"], ["1"])
 
     def test_save_json_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
