@@ -10,9 +10,18 @@ Python 3.10+ (solo biblioteca estándar; sin `pip install`).
 En desarrollo incremental. El uso y la arquitectura se documentarán aquí a
 medida que se añadan las piezas.
 
-## Cómo funciona
-El servicio de autobús urbano de Badajoz expone una API JSON (acciones `lineas`,
-`paradas`, `tiempos`). `badabus/bus_data_api.py` es el cliente que la consulta.
+## Exploración
+Esta herramienta nace de explorar los datos del servicio de autobús urbano de
+Badajoz. El servicio no publica una API documentada, pero su web de tiempos
+consume una API JSON interna. Observando las trazas de red (DevTools → *Network*)
+al usar la web se identificaron sus endpoints:
+
+- `?action=lineas` — listado de líneas.
+- `?action=paradas&linea=<id>` — paradas de una línea, en orden.
+- `?action=tiempos&parada=<id>` — próximas llegadas a una parada (en vivo).
+- `?action=correspondencias&linea=<id>` — transbordos por parada y tipo de día.
+
+`badabus/bus_data_api.py` reproduce esas mismas peticiones GET.
 
 ## Aviso
 Herramienta personal que consume datos públicos del servicio de autobús urbano de
