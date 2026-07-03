@@ -23,6 +23,13 @@ al usar la web se identificaron sus endpoints:
 
 `badabus/bus_data_api.py` reproduce esas mismas peticiones GET.
 
+## Uso
+`badabus/collector.py` descarga las líneas y sus paradas y guarda la red en `data/`
+(`paradas.json`, `lineas.json`, `red.json`). Para (re)generar los datos:
+```
+python -m badabus.collector
+```
+
 ## Aviso
 Herramienta personal que consume datos públicos del servicio de autobús urbano de
 Badajoz. No es un producto oficial y no redistribuye sus datos. Uso responsable.
