@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>badabus</title>
+  <script>
+    (function () {
+      var guardado = localStorage.getItem("tema");
+      var tema = (guardado === "claro" || guardado === "oscuro")
+        ? guardado
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro");
+      document.documentElement.dataset.theme = tema;
+    })();
+  </script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="wordmark"><span class="dot"></span>badabus</div>
+    <div class="acciones">
+      <button id="locate" type="button">Mi parada</button>
+      <button id="theme-toggle" type="button" aria-label="Cambiar tema" aria-pressed="false">
+        <span class="icono-sol" aria-hidden="true">&#9728;</span>
+        <span class="icono-luna" aria-hidden="true">&#9789;</span>
+      </button>
+    </div>
+  </header>
+  <main>
+    <aside id="panel" aria-live="polite">
+      <button type="button" class="panel-asa" id="cerrar-panel" aria-label="Cerrar"></button>
+      <div id="panel-contenido">
+        <p class="panel-vacio">Selecciona una parada en el mapa.</p>
+      </div>
+    </aside>
+    <div id="map"></div>
+  </main>
+</body>
+</html>

@@ -15,9 +15,16 @@ class TestServer(unittest.TestCase):
     def setUp(self):
         self._orig_fetch_json = bus_data_api.fetch_json
         self._orig_data_dir = server.DATA_DIR
+        self._orig_web_dir = server.WEB_DIR
         self._tmp = tempfile.TemporaryDirectory()
         Path(self._tmp.name, "lineas.json").write_text('{"M2": {"color": "#DF3A01"}}', encoding="utf-8")
+        Path(self._tmp.name, "index.html").write_text(
+            "<!doctype html><html><body>ok</body></html>", encoding="utf-8"
+        )
+        Path(self._tmp.name, "app.js").write_text("// app", encoding="utf-8")
+        Path(self._tmp.name, "styles.css").write_text("/* css */", encoding="utf-8")
         server.DATA_DIR = Path(self._tmp.name)
+        server.WEB_DIR = Path(self._tmp.name)
         self.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -28,6 +35,7 @@ class TestServer(unittest.TestCase):
         self.httpd.server_close()
         bus_data_api.fetch_json = self._orig_fetch_json
         server.DATA_DIR = self._orig_data_dir
+        server.WEB_DIR = self._orig_web_dir
         self._tmp.cleanup()
 
     def get(self, path):
@@ -71,6 +79,27 @@ class TestServer(unittest.TestCase):
 
     def test_unknown_path(self):
         status, _ = self.get("/nope")
+        self.assertEqual(status, 404)
+
+    def test_serves_index_at_root(self):
+        status, body = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn("html", body.decode("utf-8"))
+
+    def test_serves_asset(self):
+        status, _ = self.get("/app.js")
+        self.assertEqual(status, 200)
+
+    def test_unknown_asset_404(self):
+        status, _ = self.get("/evil.js")
+        self.assertEqual(status, 404)
+
+    def test_data_traversal_blocked(self):
+        status, _ = self.get("/data/..%2f..%2fserver.py")
+        self.assertEqual(status, 404)
+
+    def test_data_existing_but_not_allowlisted(self):
+        status, _ = self.get("/data/app.js")
         self.assertEqual(status, 404)
 
 

@@ -6,8 +6,17 @@ from badabus import bus_data_api as api
 
 HOST = "127.0.0.1"
 PORT = 8000
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+WEB_DIR = BASE_DIR / "web"
 DATA_FILES = {"paradas.json", "lineas.json", "red.json"}
+WEB_FILES = {"index.html", "app.js", "styles.css"}
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -16,20 +25,25 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/parada/"):
             self.handle_tiempos(path.removeprefix("/api/parada/"))
         elif path.startswith("/data/"):
-            self.handle_data(path.removeprefix("/data/"))
+            self.handle_static(path.removeprefix("/data/"), DATA_DIR, DATA_FILES)
+        elif path == "/":
+            self.handle_static("index.html", WEB_DIR, WEB_FILES)
+        elif path.lstrip("/") in WEB_FILES:
+            self.handle_static(path.lstrip("/"), WEB_DIR, WEB_FILES)
         else:
             self.fail(404, "no encontrado")
 
-    def handle_data(self, name: str) -> None:
-        if name not in DATA_FILES:
+    def handle_static(self, name: str, directory: Path, allowed: set[str]) -> None:
+        if name not in allowed:
             self.fail(404, "no encontrado")
             return
         try:
-            body = (DATA_DIR / name).read_bytes()
+            body = (directory / name).read_bytes()
         except OSError:
             self.fail(404, "no encontrado")
             return
-        self.send_json(200, body)
+        content_type = CONTENT_TYPES.get(Path(name).suffix, "application/octet-stream")
+        self.send_bytes(200, body, content_type)
 
     def handle_tiempos(self, stop_id: str) -> None:
         if not stop_id.isdigit():
@@ -42,18 +56,18 @@ class Handler(BaseHTTPRequestHandler):
             print(f"  ! error consultando tiempos de {stop_id}: {exc}")
             self.fail(502, "no se pudo consultar el servicio")
             return
-        self.send_json(200, body)
+        self.send_bytes(200, body, "application/json; charset=utf-8")
 
-    def send_json(self, status: int, body: bytes) -> None:
+    def send_bytes(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def fail(self, status: int, message: str) -> None:
         body = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
-        self.send_json(status, body)
+        self.send_bytes(status, body, "application/json; charset=utf-8")
 
     def reject(self) -> None:
         self.fail(405, "metodo no permitido")
