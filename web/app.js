@@ -5,6 +5,7 @@
   const ZOOM_INICIAL = 14;
   const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
   const COLOR_FALLBACK = "#6b7280";
+  const COLOR_BASE = "#1D9E75";
 
   const CAPAS_TILES = {
     claro: { url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" },
@@ -17,8 +18,10 @@
   let paradas = [];
   let map;
   let capaTiles;
-  const marcadorPorParada = new Map();
+  let capaMarcadores;
   let paradaActual = null;
+  let lineaSeleccionada = "";
+  let ultimasLlegadas = null;
 
   // ---------- Tema ----------
 
@@ -67,6 +70,12 @@
     return COLOR_HEX.test(color) ? color : COLOR_FALLBACK;
   }
 
+  function conAlfa(hex, alfa) {
+    const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex);
+    if (!m) return "transparent";
+    return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${alfa})`;
+  }
+
   function coordsValidas(parada) {
     return Number.isFinite(parada.lat) && Number.isFinite(parada.lon);
   }
@@ -100,20 +109,24 @@
 
   function crearMapa() {
     map = L.map("map").setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
+    capaMarcadores = L.layerGroup().addTo(map);
   }
 
-  function pintarParadas() {
+  function refrescarMarcadores() {
+    capaMarcadores.clearLayers();
     for (const parada of paradas) {
       if (!coordsValidas(parada)) continue;
+      const enFiltro = !lineaSeleccionada || (parada.lineas || []).includes(lineaSeleccionada);
+      if (!enFiltro && parada !== paradaActual) continue;
       const marcador = L.circleMarker([parada.lat, parada.lon], {
         radius: 5,
         weight: 1,
         color: "#ffffff",
-        fillColor: "#1D9E75",
+        fillColor: enFiltro && lineaSeleccionada ? colorLinea(lineaSeleccionada) : COLOR_BASE,
         fillOpacity: 0.9,
-      }).addTo(map);
+      });
       marcador.on("click", () => seleccionarParada(parada));
-      marcadorPorParada.set(parada.id, marcador);
+      marcador.addTo(capaMarcadores);
     }
   }
 
@@ -164,12 +177,22 @@
 
   function renderLlegadas(parada, llegadas) {
     const ordenadas = [...llegadas].sort((a, b) => minutosDe(a.tiempo) - minutosDe(b.tiempo));
+    if (lineaSeleccionada) {
+      ordenadas.sort((a, b) => {
+        const sa = codigoLinea(a.linea) === lineaSeleccionada ? 0 : 1;
+        const sb = codigoLinea(b.linea) === lineaSeleccionada ? 0 : 1;
+        return sa - sb;
+      });
+    }
     const filas = ordenadas
       .map((llegada) => {
         const codigo = codigoLinea(llegada.linea);
         const destino = (lineas[codigo] || {}).nombre || codigo;
+        const esSeleccionada = lineaSeleccionada && codigo === lineaSeleccionada;
+        const claseFila = esSeleccionada ? " resaltada" : "";
+        const estiloFila = esSeleccionada ? ` style="background:${conAlfa(colorLinea(codigo), 0.16)}"` : "";
         return `
-          <div class="fila-llegada">
+          <div class="fila-llegada${claseFila}"${estiloFila}>
             <span class="chip-linea" style="background:${colorLinea(codigo)}">${escaparHtml(codigo)}</span>
             <span class="fila-destino">${escaparHtml(destino)}</span>
             <span class="fila-tiempo">${escaparHtml(llegada.tiempo || "")}</span>
@@ -191,6 +214,8 @@
 
   async function seleccionarParada(parada) {
     paradaActual = parada;
+    ultimasLlegadas = null;
+    if (lineaSeleccionada) refrescarMarcadores();
     renderCargando(parada);
     abrirPanelMovil();
     try {
@@ -206,10 +231,30 @@
         renderError(parada);
         return;
       }
+      ultimasLlegadas = llegadas;
       renderLlegadas(parada, llegadas);
     } catch (err) {
       if (paradaActual === parada) renderError(parada);
     }
+  }
+
+  // ---------- Filtro por línea ----------
+
+  function poblarSelector() {
+    const select = document.getElementById("filtro-linea");
+    const codigos = Object.keys(lineas).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    for (const codigo of codigos) {
+      const opcion = document.createElement("option");
+      opcion.value = codigo;
+      opcion.textContent = codigo;
+      select.appendChild(opcion);
+    }
+  }
+
+  function alCambiarFiltro(evento) {
+    lineaSeleccionada = evento.target.value;
+    refrescarMarcadores();
+    if (paradaActual && ultimasLlegadas) renderLlegadas(paradaActual, ultimasLlegadas);
   }
 
   // ---------- Mi parada ----------
@@ -243,6 +288,7 @@
     document.getElementById("theme-toggle").addEventListener("click", alternarTema);
     document.getElementById("locate").addEventListener("click", localizarParadaMasCercana);
     document.getElementById("cerrar-panel").addEventListener("click", cerrarPanel);
+    document.getElementById("filtro-linea").addEventListener("change", alCambiarFiltro);
     document.addEventListener("keydown", (evento) => {
       if (evento.key === "Escape") cerrarPanel();
     });
@@ -251,7 +297,10 @@
     aplicarTema(temaPreferido());
 
     cargarDatos()
-      .then(pintarParadas)
+      .then(() => {
+        poblarSelector();
+        refrescarMarcadores();
+      })
       .catch(() => renderAviso("No se pudieron cargar los datos del mapa. Recarga la página."));
   }
 

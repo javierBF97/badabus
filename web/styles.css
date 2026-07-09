@@ -90,6 +90,18 @@ button:hover {
   border-color: var(--accent);
 }
 
+#filtro-linea {
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  max-width: 150px;
+}
+
 #theme-toggle {
   padding: 8px 10px;
   display: flex;
