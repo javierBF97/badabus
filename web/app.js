@@ -22,6 +22,9 @@
   let paradaActual = null;
   let lineaSeleccionada = "";
   let ultimasLlegadas = null;
+  let popupActual = null;
+  let avisoTimer = null;
+  let peticionActual = 0;
 
   // ---------- Tema ----------
 
@@ -76,6 +79,21 @@
     return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${alfa})`;
   }
 
+  function textoSobre(hex) {
+    const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex);
+    if (!m) return "#ffffff";
+    const r = parseInt(m[1], 16) / 255;
+    const g = parseInt(m[2], 16) / 255;
+    const b = parseInt(m[3], 16) / 255;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? "#111111" : "#ffffff";
+  }
+
+  function escaparHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = String(texto);
+    return div.innerHTML;
+  }
+
   function coordsValidas(parada) {
     return Number.isFinite(parada.lat) && Number.isFinite(parada.lon);
   }
@@ -105,11 +123,28 @@
     return mejor;
   }
 
+  function mostrarAviso(mensaje) {
+    const toast = document.getElementById("toast");
+    toast.textContent = mensaje;
+    toast.hidden = false;
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(() => { toast.hidden = true; }, 3500);
+  }
+
   // ---------- Mapa y datos ----------
 
   function crearMapa() {
     map = L.map("map").setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
     capaMarcadores = L.layerGroup().addTo(map);
+    map.on("popupclose", alCerrarPopup);
+  }
+
+  function alCerrarPopup(evento) {
+    if (evento.popup !== popupActual) return;
+    paradaActual = null;
+    ultimasLlegadas = null;
+    popupActual = null;
+    if (lineaSeleccionada) refrescarMarcadores();
   }
 
   function refrescarMarcadores() {
@@ -140,42 +175,9 @@
     paradas = await respParadas.json();
   }
 
-  // ---------- Panel ----------
+  // ---------- Tiempos (popup en el mapa) ----------
 
-  function contenidoPanel() {
-    return document.getElementById("panel-contenido");
-  }
-
-  function abrirPanelMovil() {
-    document.getElementById("panel").classList.add("abierto");
-  }
-
-  function cerrarPanel() {
-    document.getElementById("panel").classList.remove("abierto");
-  }
-
-  function renderCargando(parada) {
-    contenidoPanel().innerHTML = `
-      <h2 class="panel-titulo">${escaparHtml(parada.nombre)}</h2>
-      <p class="panel-estado">Cargando…</p>
-    `;
-  }
-
-  function renderError(parada) {
-    contenidoPanel().innerHTML = `
-      <h2 class="panel-titulo">${escaparHtml(parada.nombre)}</h2>
-      <p class="panel-error">No se pudieron cargar los tiempos
-        <button id="reintentar" type="button">Reintentar</button>
-      </p>
-    `;
-    document.getElementById("reintentar").addEventListener("click", () => seleccionarParada(parada));
-  }
-
-  function renderAviso(mensaje) {
-    contenidoPanel().innerHTML = `<p class="panel-estado">${escaparHtml(mensaje)}</p>`;
-  }
-
-  function renderLlegadas(parada, llegadas) {
+  function filasLlegadas(llegadas) {
     const ordenadas = [...llegadas].sort((a, b) => minutosDe(a.tiempo) - minutosDe(b.tiempo));
     if (lineaSeleccionada) {
       ordenadas.sort((a, b) => {
@@ -184,102 +186,213 @@
         return sa - sb;
       });
     }
-    const filas = ordenadas
+    return ordenadas
       .map((llegada) => {
         const codigo = codigoLinea(llegada.linea);
+        const color = colorLinea(codigo);
         const destino = (lineas[codigo] || {}).nombre || codigo;
-        const esSeleccionada = lineaSeleccionada && codigo === lineaSeleccionada;
-        const claseFila = esSeleccionada ? " resaltada" : "";
-        const estiloFila = esSeleccionada ? ` style="background:${conAlfa(colorLinea(codigo), 0.16)}"` : "";
+        const seleccionada = lineaSeleccionada && codigo === lineaSeleccionada;
+        const estilo = seleccionada ? ` style="background:${conAlfa(color, 0.16)}"` : "";
         return `
-          <div class="fila-llegada${claseFila}"${estiloFila}>
-            <span class="chip-linea" style="background:${colorLinea(codigo)}">${escaparHtml(codigo)}</span>
+          <div class="fila-llegada${seleccionada ? " resaltada" : ""}"${estilo}>
+            <span class="chip-linea" style="background:${color};color:${textoSobre(color)}">${escaparHtml(codigo)}</span>
             <span class="fila-destino">${escaparHtml(destino)}</span>
             <span class="fila-tiempo">${escaparHtml(llegada.tiempo || "")}</span>
-          </div>
-        `;
+          </div>`;
       })
       .join("");
-    contenidoPanel().innerHTML = `
-      <h2 class="panel-titulo">${escaparHtml(parada.nombre)}</h2>
-      ${filas || '<p class="panel-estado">Sin llegadas próximas.</p>'}
-    `;
   }
 
-  function escaparHtml(texto) {
-    const div = document.createElement("div");
-    div.textContent = String(texto);
-    return div.innerHTML;
+  function htmlPopup(parada, cuerpo) {
+    return `<div class="popup-titulo">${escaparHtml(parada.nombre)}</div>${cuerpo}`;
+  }
+
+  function mostrarPopup(parada, cuerpo) {
+    popupActual = L.popup({ maxWidth: 300, minWidth: 210, className: "popup-badabus", autoPanPadding: [24, 24] })
+      .setLatLng([parada.lat, parada.lon])
+      .setContent(htmlPopup(parada, cuerpo));
+    popupActual.openOn(map);
+  }
+
+  function actualizarPopup(parada, cuerpo) {
+    if (!popupActual || paradaActual !== parada) return;
+    popupActual.setContent(htmlPopup(parada, cuerpo));
+    const el = popupActual.getElement();
+    const boton = el && el.querySelector(".reintentar");
+    if (boton) boton.addEventListener("click", () => seleccionarParada(parada));
+  }
+
+  function cuerpoError() {
+    return '<div class="popup-estado">No se pudieron cargar los tiempos <button type="button" class="reintentar">Reintentar</button></div>';
   }
 
   async function seleccionarParada(parada) {
     paradaActual = parada;
     ultimasLlegadas = null;
+    const idPeticion = ++peticionActual;
     if (lineaSeleccionada) refrescarMarcadores();
-    renderCargando(parada);
-    abrirPanelMovil();
+    mostrarPopup(parada, '<div class="popup-estado">Cargando…</div>');
     try {
       const resp = await fetch(`/api/parada/${encodeURIComponent(parada.id)}`);
-      if (paradaActual !== parada) return;
+      if (idPeticion !== peticionActual) return;
       if (!resp.ok) {
-        renderError(parada);
+        actualizarPopup(parada, cuerpoError());
         return;
       }
       const llegadas = await resp.json();
-      if (paradaActual !== parada) return;
+      if (idPeticion !== peticionActual) return;
       if (!Array.isArray(llegadas)) {
-        renderError(parada);
+        actualizarPopup(parada, cuerpoError());
         return;
       }
       ultimasLlegadas = llegadas;
-      renderLlegadas(parada, llegadas);
+      const filas = filasLlegadas(llegadas);
+      actualizarPopup(parada, filas || '<div class="popup-estado">Sin llegadas próximas.</div>');
     } catch (err) {
-      if (paradaActual === parada) renderError(parada);
+      if (idPeticion === peticionActual) actualizarPopup(parada, cuerpoError());
     }
   }
 
   // ---------- Filtro por línea ----------
 
-  function poblarSelector() {
-    const select = document.getElementById("filtro-linea");
+  function poblarChips() {
+    const contenedor = document.getElementById("chips-lineas");
+    const todas = document.createElement("button");
+    todas.type = "button";
+    todas.className = "chip-linea-btn todas";
+    todas.textContent = "Todas";
+    todas.addEventListener("click", () => seleccionarLinea(""));
+    contenedor.appendChild(todas);
     const codigos = Object.keys(lineas).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
     for (const codigo of codigos) {
-      const opcion = document.createElement("option");
-      opcion.value = codigo;
-      opcion.textContent = codigo;
-      select.appendChild(opcion);
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip-linea-btn";
+      chip.textContent = codigo;
+      chip.style.background = colorLinea(codigo);
+      chip.style.color = textoSobre(colorLinea(codigo));
+      chip.addEventListener("click", () => seleccionarLinea(codigo));
+      contenedor.appendChild(chip);
     }
   }
 
-  function alCambiarFiltro(evento) {
-    lineaSeleccionada = evento.target.value;
+  function seleccionarLinea(codigo) {
+    lineaSeleccionada = codigo;
+    actualizarBotonLineas();
     refrescarMarcadores();
-    if (paradaActual && ultimasLlegadas) renderLlegadas(paradaActual, ultimasLlegadas);
+    if (paradaActual && ultimasLlegadas) {
+      const filas = filasLlegadas(ultimasLlegadas);
+      actualizarPopup(paradaActual, filas || '<div class="popup-estado">Sin llegadas próximas.</div>');
+    }
+    cerrarLineas();
+  }
+
+  function actualizarBotonLineas() {
+    const chip = document.getElementById("btn-chip");
+    const texto = document.getElementById("btn-texto");
+    if (lineaSeleccionada) {
+      chip.style.display = "inline-block";
+      chip.style.background = colorLinea(lineaSeleccionada);
+      texto.textContent = lineaSeleccionada;
+    } else {
+      chip.style.display = "none";
+      texto.textContent = "Líneas";
+    }
+  }
+
+  function abrirLineas() {
+    document.getElementById("panel-lineas").hidden = false;
+    document.getElementById("scrim-lineas").hidden = false;
+    document.getElementById("btn-lineas").setAttribute("aria-expanded", "true");
+    document.getElementById("cerrar-lineas").focus();
+  }
+
+  function cerrarLineas() {
+    const panel = document.getElementById("panel-lineas");
+    const estabaAbierto = !panel.hidden;
+    panel.hidden = true;
+    document.getElementById("scrim-lineas").hidden = true;
+    document.getElementById("btn-lineas").setAttribute("aria-expanded", "false");
+    if (estabaAbierto) document.getElementById("btn-lineas").focus();
   }
 
   // ---------- Mi parada ----------
 
   function localizarParadaMasCercana() {
     if (!navigator.geolocation) {
-      renderAviso("La geolocalización no está disponible en este dispositivo.");
-      abrirPanelMovil();
+      mostrarAviso("La geolocalización no está disponible en este dispositivo.");
       return;
     }
-    renderAviso("Buscando tu ubicación…");
-    abrirPanelMovil();
+    mostrarAviso("Buscando tu ubicación…");
     navigator.geolocation.getCurrentPosition(
       (posicion) => {
         const { latitude, longitude } = posicion.coords;
         const cercana = paradaMasCercana(latitude, longitude, paradas);
         if (!cercana) {
-          renderAviso("No se encontró ninguna parada cercana.");
+          mostrarAviso("No se encontró ninguna parada cercana.");
           return;
         }
         map.setView([cercana.lat, cercana.lon], 16);
         seleccionarParada(cercana);
       },
-      () => renderAviso("No se pudo obtener tu ubicación.")
+      () => mostrarAviso("No se pudo obtener tu ubicación.")
     );
+  }
+
+  // ---------- Buscador de paradas ----------
+
+  function buscarParadas(texto) {
+    const consulta = texto.trim().toLowerCase();
+    if (!consulta) return [];
+    const encontradas = [];
+    for (const parada of paradas) {
+      if (String(parada.nombre).toLowerCase().includes(consulta)) {
+        encontradas.push(parada);
+        if (encontradas.length >= 8) break;
+      }
+    }
+    return encontradas;
+  }
+
+  function renderResultados(lista) {
+    const contenedor = document.getElementById("resultados-busqueda");
+    const buscador = document.getElementById("buscar-parada");
+    contenedor.innerHTML = "";
+    if (!lista.length) {
+      contenedor.hidden = true;
+      buscador.setAttribute("aria-expanded", "false");
+      return;
+    }
+    for (const parada of lista) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "resultado-item";
+      item.setAttribute("role", "option");
+      item.textContent = parada.nombre;
+      item.addEventListener("mousedown", (evento) => {
+        evento.preventDefault();
+        elegirBusqueda(parada);
+      });
+      contenedor.appendChild(item);
+    }
+    contenedor.hidden = false;
+    buscador.setAttribute("aria-expanded", "true");
+  }
+
+  function ocultarResultados() {
+    document.getElementById("resultados-busqueda").hidden = true;
+    document.getElementById("buscar-parada").setAttribute("aria-expanded", "false");
+  }
+
+  function elegirBusqueda(parada) {
+    document.getElementById("buscar-parada").value = parada.nombre;
+    ocultarResultados();
+    if (!coordsValidas(parada)) {
+      mostrarAviso("Esa parada no tiene ubicación en el mapa.");
+      return;
+    }
+    map.setView([parada.lat, parada.lon], 16);
+    seleccionarParada(parada);
   }
 
   // ---------- Inicio ----------
@@ -287,10 +400,18 @@
   function inicializar() {
     document.getElementById("theme-toggle").addEventListener("click", alternarTema);
     document.getElementById("locate").addEventListener("click", localizarParadaMasCercana);
-    document.getElementById("cerrar-panel").addEventListener("click", cerrarPanel);
-    document.getElementById("filtro-linea").addEventListener("change", alCambiarFiltro);
+    document.getElementById("btn-lineas").addEventListener("click", abrirLineas);
+    document.getElementById("cerrar-lineas").addEventListener("click", cerrarLineas);
+    document.getElementById("scrim-lineas").addEventListener("click", cerrarLineas);
+    const buscador = document.getElementById("buscar-parada");
+    buscador.addEventListener("input", (evento) => renderResultados(buscarParadas(evento.target.value)));
+    buscador.addEventListener("blur", ocultarResultados);
     document.addEventListener("keydown", (evento) => {
-      if (evento.key === "Escape") cerrarPanel();
+      if (evento.key === "Escape") {
+        cerrarLineas();
+        ocultarResultados();
+        if (map) map.closePopup();
+      }
     });
 
     crearMapa();
@@ -298,10 +419,10 @@
 
     cargarDatos()
       .then(() => {
-        poblarSelector();
+        poblarChips();
         refrescarMarcadores();
       })
-      .catch(() => renderAviso("No se pudieron cargar los datos del mapa. Recarga la página."));
+      .catch(() => mostrarAviso("No se pudieron cargar los datos del mapa. Recarga la página."));
   }
 
   document.addEventListener("DOMContentLoaded", inicializar);

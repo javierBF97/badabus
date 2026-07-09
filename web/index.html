@@ -21,11 +21,17 @@
 <body>
   <header>
     <div class="wordmark"><span class="dot"></span>badabus</div>
+    <div class="busqueda">
+      <input id="buscar-parada" type="text" placeholder="Buscar parada…" aria-label="Buscar parada"
+        autocomplete="off" role="combobox" aria-expanded="false" aria-controls="resultados-busqueda" aria-autocomplete="list">
+      <div id="resultados-busqueda" role="listbox" hidden></div>
+    </div>
     <div class="acciones">
-      <select id="filtro-linea" aria-label="Filtrar por línea">
-        <option value="">Todas las líneas</option>
-      </select>
-      <button id="locate" type="button">Mi parada</button>
+      <button id="btn-lineas" type="button" aria-haspopup="true" aria-expanded="false">
+        <span class="btn-chip" id="btn-chip" style="display:none"></span>
+        <span id="btn-texto">Líneas</span>
+      </button>
+      <button id="locate" type="button">Parada más cercana</button>
       <button id="theme-toggle" type="button" aria-label="Cambiar tema" aria-pressed="false">
         <span class="icono-sol" aria-hidden="true">&#9728;</span>
         <span class="icono-luna" aria-hidden="true">&#9789;</span>
@@ -33,13 +39,16 @@
     </div>
   </header>
   <main>
-    <aside id="panel" aria-live="polite">
-      <button type="button" class="panel-asa" id="cerrar-panel" aria-label="Cerrar"></button>
-      <div id="panel-contenido">
-        <p class="panel-vacio">Selecciona una parada en el mapa.</p>
-      </div>
-    </aside>
     <div id="map"></div>
   </main>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <div id="scrim-lineas" hidden></div>
+  <aside id="panel-lineas" hidden role="dialog" aria-modal="true" aria-label="Elegir línea">
+    <div class="panel-lineas-cabecera">
+      <span>Elige una línea</span>
+      <button type="button" id="cerrar-lineas" aria-label="Cerrar">&times;</button>
+    </div>
+    <div id="chips-lineas"></div>
+  </aside>
 </body>
 </html>

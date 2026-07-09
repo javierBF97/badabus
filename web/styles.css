@@ -40,6 +40,11 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+body {
+  display: flex;
+  flex-direction: column;
+}
+
 header {
   display: flex;
   align-items: center;
@@ -75,6 +80,58 @@ header {
   gap: 8px;
 }
 
+.busqueda {
+  position: relative;
+  flex: 1;
+  max-width: 300px;
+  margin: 0 12px;
+}
+
+#buscar-parada {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+#resultados-busqueda {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 1700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.resultado-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resultado-item:hover {
+  background: var(--bg);
+  border-color: transparent;
+}
+
 button {
   font-family: inherit;
   font-size: 0.9rem;
@@ -90,16 +147,99 @@ button:hover {
   border-color: var(--accent);
 }
 
-#filtro-linea {
-  font-family: inherit;
-  font-size: 0.9rem;
+[hidden] {
+  display: none !important;
+}
+
+#btn-lineas {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.btn-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+}
+
+#scrim-lineas {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 22, 26, 0.4);
+  z-index: 1500;
+}
+
+#panel-lineas {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 60vh;
+  overflow: auto;
+  z-index: 1600;
   background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  padding: 14px 16px 18px;
+}
+
+.panel-lineas-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.panel-lineas-cabecera button {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 2px 8px;
+}
+
+#chips-lineas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-linea-btn {
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
   cursor: pointer;
-  max-width: 150px;
+}
+
+.chip-linea-btn.todas {
+  color: var(--text);
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+@media (min-width: 720px) {
+  #panel-lineas {
+    left: auto;
+    right: 12px;
+    bottom: auto;
+    top: 64px;
+    width: 320px;
+    max-height: 70vh;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  #scrim-lineas {
+    background: transparent;
+  }
 }
 
 #theme-toggle {
@@ -121,50 +261,65 @@ button:hover {
 }
 
 main {
-  height: calc(100vh - 56px);
-  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 #map {
-  flex: 1;
   height: 100%;
 }
 
-#panel {
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 2000;
   background: var(--surface);
-  border-right: 1px solid var(--border);
-  overflow: auto;
-  padding: 16px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  max-width: 90vw;
 }
 
-.panel-asa {
-  display: none;
+.popup-badabus .leaflet-popup-content-wrapper {
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 12px;
 }
 
-.panel-vacio {
+.popup-badabus .leaflet-popup-tip {
+  background: var(--surface);
+}
+
+.popup-badabus .leaflet-popup-content {
+  margin: 12px 14px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.popup-badabus .leaflet-popup-close-button {
   color: var(--text-muted);
-  font-size: 0.9rem;
 }
 
-.panel-titulo {
+.popup-titulo {
   font-weight: 600;
-  font-size: 1rem;
-  margin: 0 0 12px;
+  font-size: 0.95rem;
+  margin-bottom: 6px;
 }
 
-.panel-estado {
+.popup-estado {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
-.panel-error {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.panel-error button {
+.reintentar {
   margin-left: 6px;
   padding: 2px 8px;
+  font-size: 0.8rem;
 }
 
 .fila-llegada {
@@ -192,8 +347,12 @@ main {
 
 .fila-destino {
   flex: 1;
+  min-width: 0;
   color: var(--text-muted);
   font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fila-tiempo {
@@ -202,63 +361,23 @@ main {
   white-space: nowrap;
 }
 
-/* Escritorio */
-@media (min-width: 720px) {
-  #panel {
-    width: 280px;
-    order: -1;
-  }
-}
-
-/* Movil */
-@media (max-width: 719px) {
-  main {
-    position: relative;
+@media (max-width: 640px) {
+  header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 8px 12px;
+    row-gap: 8px;
   }
 
-  #map {
-    width: 100%;
+  .busqueda {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+    margin: 0;
   }
 
-  #panel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    max-height: 55vh;
-    overflow: auto;
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    border-right: none;
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
-    transform: translateY(100%);
-    transition: transform 0.25s ease;
-  }
-
-  #panel.abierto {
-    transform: translateY(0);
-  }
-
-  .panel-asa {
-    display: block;
-    width: 100%;
-    height: 24px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    position: relative;
-  }
-
-  .panel-asa::before {
-    content: "";
-    position: absolute;
-    top: 9px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 40px;
-    height: 5px;
-    border-radius: 3px;
-    background: var(--border);
+  button {
+    padding: 7px 10px;
+    font-size: 0.85rem;
   }
 }
