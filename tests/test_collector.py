@@ -32,12 +32,16 @@ def fake(url, timeout=10):
         return PARADAS_2
     if "action=paradas" in url and "linea=TRIP_100007" in url:
         return PARADAS_M2
+    if "shape002_A.json" in url:
+        return b'[{"shape_pt_lat":"38.87","shape_pt_lon":"-6.97","sentido":"1"}]'
+    if "shapeTRIP_100007.json" in url:
+        return b'[{"shape_pt_lat":"38.82","shape_pt_lon":"-6.92","sentido":"1"},{"shape_pt_lat":"38.80","shape_pt_lon":"-6.90","sentido":"2"}]'
     raise AssertionError("url inesperada: " + url)
 
 
 class TestCollect(unittest.TestCase):
     def test_builds_stops_meta_and_red(self):
-        stops, meta, red = collector.collect(fetcher=fake)
+        stops, meta, red, shapes = collector.collect(fetcher=fake)
         by_id = {s["id"]: s for s in stops}
         self.assertEqual(sorted(by_id), ["1844", "202"])
         self.assertEqual(by_id["202"]["lineas"], ["2", "M2"])
@@ -45,6 +49,8 @@ class TestCollect(unittest.TestCase):
         self.assertEqual(meta["M2"], {"color": "#f58322", "nombre": "Campomanes"})
         self.assertEqual(red["M2"], ["1844", "202"])
         self.assertEqual(red["2"], ["202"])
+        self.assertEqual(shapes["M2"], {"1": [[38.82, -6.92]], "2": [[38.8, -6.9]]})
+        self.assertEqual(shapes["2"], {"1": [[38.87, -6.97]]})
 
     def test_natural_key_orders_lines(self):
         names = ["M2", "2", "11", "C1", "9F", "9"]
@@ -72,11 +78,32 @@ class TestCollect(unittest.TestCase):
             return paradas_mixtas
 
         with contextlib.redirect_stdout(io.StringIO()):
-            stops, _, red = collector.collect(fetcher=fake_mixto)
+            stops, _, red, _ = collector.collect(fetcher=fake_mixto)
         ids = {s["id"] for s in stops}
         self.assertIn("1", ids)
         self.assertNotIn("2", ids)
         self.assertEqual(red["2"], ["1"])
+
+    def test_shape_malformado_no_aborta(self):
+        def fake_shape_malo(url, timeout=10):
+            if "action=lineas" in url:
+                return LINEAS
+            if "action=paradas" in url and "linea=002_A" in url:
+                return PARADAS_2
+            if "action=paradas" in url and "linea=TRIP_100007" in url:
+                return PARADAS_M2
+            if "shape002_A.json" in url:
+                return b'[{"shape_pt_lat":"38.87","shape_pt_lon":"-6.97","sentido":"1"}]'
+            if "shapeTRIP_100007.json" in url:
+                return b'[{"falta":"claves"}]'
+            raise AssertionError("url inesperada: " + url)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            stops, meta, red, shapes = collector.collect(fetcher=fake_shape_malo)
+        self.assertEqual(sorted({s["id"] for s in stops}), ["1844", "202"])
+        self.assertEqual(sorted(red), ["2", "M2"])
+        self.assertIn("2", shapes)
+        self.assertNotIn("M2", shapes)
 
     def test_save_json_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:

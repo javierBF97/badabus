@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 
 BUS_API_BASE = "https://tubasa.autobus.cloud/tiemposdellegada/api/"
 FETCH_MAX_BYTES = 5_000_000
+SHAPES_BASE = "https://tubasa.eu/planos_de_lineas/datos/"
 
 
 def fetch(url: str, timeout: int = 10) -> bytes:
@@ -25,12 +26,30 @@ def fetch_json(action: str, fetcher: Callable[..., bytes] = fetch, **params) -> 
     return payload["data"]
 
 
+def fetch_shape(shape_id: str, fetcher: Callable[..., bytes] = fetch) -> list[dict]:
+    """Baja la geometría (shape) de una línea; devuelve el array crudo de puntos."""
+    data = json.loads(fetcher(f"{SHAPES_BASE}shape{shape_id}.json"))
+    if not isinstance(data, list):
+        raise ValueError(f"shape{shape_id}.json: se esperaba un array, no {type(data).__name__}")
+    return data
+
+
 def parse_tiempos(data: list[dict]) -> list[dict]:
     """De la respuesta de action=tiempos a llegadas con los metros como entero (o None)."""
     return [
         {"linea": row["linea"], "metros": metros_de(row["distancia"]), "tiempo": row["tiempo"]}
         for row in data
     ]
+
+
+def parse_shape(puntos: list[dict]) -> dict[str, list[list[float]]]:
+    """Agrupa los puntos del shape por sentido: {'1': [[lat,lon],...], '2': [...]}, en orden."""
+    por_sentido: dict[str, list[list[float]]] = {}
+    for p in puntos:
+        por_sentido.setdefault(p["sentido"], []).append(
+            [float(p["shape_pt_lat"]), float(p["shape_pt_lon"])]
+        )
+    return por_sentido
 
 
 def metros_de(distancia: str | None) -> int | None:

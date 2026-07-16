@@ -6,12 +6,13 @@ from pathlib import Path
 from badabus import bus_data_api as api
 
 
-def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict, dict]:
-    """Descarga líneas y sus paradas; devuelve (paradas únicas, meta de líneas, recorridos).
+def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict, dict, dict]:
+    """Descarga líneas, paradas y trazados; devuelve (paradas, meta, red, shapes).
 
     - paradas: dedup por stop_code, con las líneas que la sirven.
     - meta: {lin: {color, nombre}}.
     - red: {lin: [stop_code en orden de recorrido]}.
+    - shapes: {lin: {sentido: [[lat, lon], ...]}}.
     """
     lineas = api.fetch_json("lineas", fetcher=fetcher)
     by_code: dict[str, dict] = {}
@@ -45,7 +46,15 @@ def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict
         linea["lin"]: {"color": "#" + linea["color_fondo"], "nombre": linea["descripcion"]}
         for linea in lineas
     }
-    return stops, meta, red
+    shapes: dict[str, dict] = {}
+    for linea in lineas:
+        try:
+            puntos = api.fetch_shape(linea["id"], fetcher=fetcher)
+            shapes[linea["lin"]] = api.parse_shape(puntos)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"  ! sin trazado para línea {linea['lin']}: {exc}")
+            continue
+    return stops, meta, red, shapes
 
 
 def save_json(obj: list | dict, path: str) -> None:
@@ -56,11 +65,12 @@ def save_json(obj: list | dict, path: str) -> None:
 
 def main() -> None:
     data_dir = Path(__file__).resolve().parent.parent / "data"
-    stops, meta, red = collect()
+    stops, meta, red, shapes = collect()
     save_json(stops, str(data_dir / "paradas.json"))
     save_json(meta, str(data_dir / "lineas.json"))
     save_json(red, str(data_dir / "red.json"))
-    print(f"Guardadas {len(stops)} paradas, {len(meta)} líneas y {len(red)} recorridos en {data_dir}")
+    save_json(shapes, str(data_dir / "shapes.json"))
+    print(f"Guardadas {len(stops)} paradas, {len(meta)} líneas, {len(red)} recorridos y {len(shapes)} trazados en {data_dir}")
 
 
 def parada_valida(parada: dict) -> bool:

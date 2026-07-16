@@ -53,5 +53,35 @@ class TestParseTiempos(unittest.TestCase):
         self.assertEqual(api.parse_tiempos([]), [])
 
 
+class TestFetchShape(unittest.TestCase):
+    def test_builds_url_and_returns_array(self):
+        seen = {}
+        def fake(url, timeout=10):
+            seen["url"] = url
+            return b'[{"shape_pt_lat":"38.8","shape_pt_lon":"-6.9","sentido":"1"}]'
+        out = api.fetch_shape("TRIP_100007", fetcher=fake)
+        self.assertIn("shapeTRIP_100007.json", seen["url"])
+        self.assertEqual(out, [{"shape_pt_lat": "38.8", "shape_pt_lon": "-6.9", "sentido": "1"}])
+
+    def test_raises_when_not_a_list(self):
+        def fake(url, timeout=10):
+            return b'{"error":"not found"}'
+        with self.assertRaises(ValueError):
+            api.fetch_shape("X", fetcher=fake)
+
+
+class TestParseShape(unittest.TestCase):
+    def test_groups_by_sentido_in_order(self):
+        puntos = [
+            {"shape_pt_lat": "38.1", "shape_pt_lon": "-6.1", "sentido": "1"},
+            {"shape_pt_lat": "38.2", "shape_pt_lon": "-6.2", "sentido": "1"},
+            {"shape_pt_lat": "38.9", "shape_pt_lon": "-6.9", "sentido": "2"},
+        ]
+        self.assertEqual(api.parse_shape(puntos), {
+            "1": [[38.1, -6.1], [38.2, -6.2]],
+            "2": [[38.9, -6.9]],
+        })
+
+
 if __name__ == "__main__":
     unittest.main()

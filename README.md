@@ -25,9 +25,15 @@ al usar la web se identificaron sus endpoints:
 `tiempos`. `correspondencias` se documenta como hallazgo, pero **no se usa**: los
 transbordos se deducen de las líneas que pasan por cada parada.
 
+Aparte de esa API, la **geometría de los recorridos** (trazados) vive en otro host:
+la web de planos de línea consume `https://tubasa.eu/planos_de_lineas/datos/shape<id>.json`,
+que devuelve la polilínea de una línea como array de puntos (`shape_pt_lat`,
+`shape_pt_lon`, `sentido`). `badabus/bus_data_api.py` (`fetch_shape`) la baja y
+`parse_shape` la agrupa por sentido para poder dibujar el trazado en el mapa.
+
 ## Uso
-`badabus/collector.py` descarga las líneas y sus paradas y guarda la red en `data/`
-(`paradas.json`, `lineas.json`, `red.json`). Para (re)generar los datos:
+`badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
+(`paradas.json`, `lineas.json`, `red.json`, `shapes.json`). Para (re)generar los datos:
 ```
 python -m badabus.collector
 ```
@@ -36,7 +42,7 @@ python -m badabus.collector
 `badabus/server.py` levanta un servidor local (`http.server`, escuchando solo en
 `127.0.0.1`) con dos rutas:
 
-- `GET /data/<paradas|lineas|red>.json` — sirve la red generada por el recolector.
+- `GET /data/<paradas|lineas|red|shapes>.json` — sirve la red generada por el recolector.
 - `GET /api/parada/<id>` — próximas llegadas a una parada (dato en vivo).
 
 Arrancarlo:

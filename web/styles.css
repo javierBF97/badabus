@@ -345,6 +345,10 @@ main {
   color: #fff;
 }
 
+.chip-clicable {
+  cursor: pointer;
+}
+
 .fila-destino {
   flex: 1;
   min-width: 0;

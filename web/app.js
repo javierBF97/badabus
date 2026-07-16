@@ -6,6 +6,7 @@
   const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
   const COLOR_FALLBACK = "#6b7280";
   const COLOR_BASE = "#1D9E75";
+  const ALIAS_LINEA = { BGM1: "BG1", BGM2: "BG2" };
 
   const CAPAS_TILES = {
     claro: { url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" },
@@ -16,15 +17,19 @@
 
   let lineas = {};
   let paradas = [];
+  let shapes = {};
   let map;
   let capaTiles;
+  let capaTrazado;
   let capaMarcadores;
   let paradaActual = null;
   let lineaSeleccionada = "";
+  let lineaVistazo = "";
   let ultimasLlegadas = null;
   let popupActual = null;
   let avisoTimer = null;
   let peticionActual = 0;
+  let cierreVistazoPendiente = null;
 
   // ---------- Tema ----------
 
@@ -57,7 +62,8 @@
   // ---------- Helpers ----------
 
   function codigoLinea(texto) {
-    return String(texto).replace(/^L[ÍI]NEA\s+/i, "").trim();
+    const codigo = String(texto).replace(/^L[ÍI]NEA\s+/i, "").trim();
+    return ALIAS_LINEA[codigo] || codigo;
   }
 
   function minutosDe(tiempo) {
@@ -91,7 +97,7 @@
   function escaparHtml(texto) {
     const div = document.createElement("div");
     div.textContent = String(texto);
-    return div.innerHTML;
+    return div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
   }
 
   function coordsValidas(parada) {
@@ -135,6 +141,7 @@
 
   function crearMapa() {
     map = L.map("map").setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
+    capaTrazado = L.layerGroup().addTo(map);
     capaMarcadores = L.layerGroup().addTo(map);
     map.on("popupclose", alCerrarPopup);
   }
@@ -144,24 +151,89 @@
     paradaActual = null;
     ultimasLlegadas = null;
     popupActual = null;
-    if (lineaSeleccionada) refrescarMarcadores();
+    // Cierre diferido: si enseguida se abre otro popup (cambio de parada), no se limpia el vistazo.
+    clearTimeout(cierreVistazoPendiente);
+    cierreVistazoPendiente = setTimeout(() => {
+      if (popupActual) return;
+      if (lineaVistazo) {
+        lineaVistazo = "";
+        refrescarMarcadores();
+        dibujarTrazado();
+      } else if (lineaSeleccionada) {
+        refrescarMarcadores();
+      }
+    }, 0);
   }
 
   function refrescarMarcadores() {
     capaMarcadores.clearLayers();
     for (const parada of paradas) {
       if (!coordsValidas(parada)) continue;
-      const enFiltro = !lineaSeleccionada || (parada.lineas || []).includes(lineaSeleccionada);
-      if (!enFiltro && parada !== paradaActual) continue;
-      const marcador = L.circleMarker([parada.lat, parada.lon], {
-        radius: 5,
-        weight: 1,
-        color: "#ffffff",
-        fillColor: enFiltro && lineaSeleccionada ? colorLinea(lineaSeleccionada) : COLOR_BASE,
-        fillOpacity: 0.9,
-      });
+      const opciones = estiloMarcador(parada);
+      if (!opciones) continue;
+      const marcador = L.circleMarker([parada.lat, parada.lon], opciones);
       marcador.on("click", () => seleccionarParada(parada));
       marcador.addTo(capaMarcadores);
+    }
+  }
+
+  function estiloMarcador(parada) {
+    const sirve = (codigo) => (parada.lineas || []).includes(codigo);
+    if (lineaVistazo) {
+      // Vistazo como capa: resalta la línea del vistazo y la del selector; difumina el resto.
+      if (sirve(lineaVistazo)) {
+        return { radius: 7, weight: 2, color: "#ffffff", fillColor: colorLinea(lineaVistazo), fillOpacity: 0.95 };
+      }
+      if (lineaSeleccionada && sirve(lineaSeleccionada)) {
+        return { radius: 7, weight: 2, color: "#ffffff", fillColor: colorLinea(lineaSeleccionada), fillOpacity: 0.95 };
+      }
+      return { radius: 5, weight: 1, color: "#cfcfcf", fillColor: "#e2e2e2", fillOpacity: 0.4 };
+    }
+    if (lineaSeleccionada) {
+      // Filtro fijo: solo las paradas de la línea (y la parada abierta como excepción).
+      if (sirve(lineaSeleccionada)) {
+        return { radius: 8, weight: 2, color: "#ffffff", fillColor: colorLinea(lineaSeleccionada), fillOpacity: 0.95 };
+      }
+      if (parada === paradaActual) {
+        return { radius: 8, weight: 2, color: "#ffffff", fillColor: COLOR_BASE, fillOpacity: 0.9 };
+      }
+      return null;
+    }
+    return { radius: 5, weight: 2, color: "#ffffff", fillColor: COLOR_BASE, fillOpacity: 0.9 };
+  }
+
+  function dibujarTrazado() {
+    capaTrazado.clearLayers();
+    const grupo = L.featureGroup();
+    dibujarRutaEn(grupo, lineaSeleccionada);
+    if (lineaVistazo && lineaVistazo !== lineaSeleccionada) dibujarRutaEn(grupo, lineaVistazo);
+    if (!grupo.getLayers().length) return;
+    grupo.addTo(capaTrazado);
+    if (!lineaVistazo && lineaSeleccionada) map.fitBounds(grupo.getBounds(), { padding: [30, 30] });
+  }
+
+  function dibujarRutaEn(grupo, codigo) {
+    if (!codigo) return;
+    const trazado = shapes[codigo];
+    if (!trazado) return;
+    const color = colorLinea(codigo);
+    for (const puntos of Object.values(trazado)) {
+      if (puntos.length < 2) continue;
+      const linea = L.polyline(puntos, { color, weight: 3, opacity: 0.8, dashArray: "4 10" });
+      linea.addTo(grupo);
+      if (L.Symbol && L.polylineDecorator) {
+        L.polylineDecorator(linea, {
+          patterns: [{
+            offset: 20,
+            repeat: 70,
+            symbol: L.Symbol.arrowHead({
+              pixelSize: 9,
+              polygon: true,
+              pathOptions: { color, fillOpacity: 0.9, weight: 0 },
+            }),
+          }],
+        }).addTo(grupo);
+      }
     }
   }
 
@@ -173,6 +245,12 @@
     if (!respLineas.ok || !respParadas.ok) throw new Error("datos no disponibles");
     lineas = await respLineas.json();
     paradas = await respParadas.json();
+    try {
+      const respShapes = await fetch("/data/shapes.json");
+      if (respShapes.ok) shapes = await respShapes.json();
+    } catch (err) {
+      shapes = {};
+    }
   }
 
   // ---------- Tiempos (popup en el mapa) ----------
@@ -193,9 +271,12 @@
         const destino = (lineas[codigo] || {}).nombre || codigo;
         const seleccionada = lineaSeleccionada && codigo === lineaSeleccionada;
         const estilo = seleccionada ? ` style="background:${conAlfa(color, 0.16)}"` : "";
+        const conocida = Boolean(lineas[codigo]);
+        const claseChip = conocida ? "chip-linea chip-clicable" : "chip-linea";
+        const dataLinea = conocida ? ` data-linea="${escaparHtml(codigo)}"` : "";
         return `
           <div class="fila-llegada${seleccionada ? " resaltada" : ""}"${estilo}>
-            <span class="chip-linea" style="background:${color};color:${textoSobre(color)}">${escaparHtml(codigo)}</span>
+            <span class="${claseChip}"${dataLinea} style="background:${color};color:${textoSobre(color)}">${escaparHtml(codigo)}</span>
             <span class="fila-destino">${escaparHtml(destino)}</span>
             <span class="fila-tiempo">${escaparHtml(llegada.tiempo || "")}</span>
           </div>`;
@@ -208,6 +289,7 @@
   }
 
   function mostrarPopup(parada, cuerpo) {
+    clearTimeout(cierreVistazoPendiente);
     popupActual = L.popup({ maxWidth: 300, minWidth: 210, className: "popup-badabus", autoPanPadding: [24, 24] })
       .setLatLng([parada.lat, parada.lon])
       .setContent(htmlPopup(parada, cuerpo));
@@ -218,8 +300,12 @@
     if (!popupActual || paradaActual !== parada) return;
     popupActual.setContent(htmlPopup(parada, cuerpo));
     const el = popupActual.getElement();
-    const boton = el && el.querySelector(".reintentar");
+    if (!el) return;
+    const boton = el.querySelector(".reintentar");
     if (boton) boton.addEventListener("click", () => seleccionarParada(parada));
+    el.querySelectorAll(".chip-clicable").forEach((chip) => {
+      chip.addEventListener("click", () => vistazoLinea(chip.dataset.linea));
+    });
   }
 
   function cuerpoError() {
@@ -277,14 +363,23 @@
   }
 
   function seleccionarLinea(codigo) {
+    lineaVistazo = "";
     lineaSeleccionada = codigo;
     actualizarBotonLineas();
     refrescarMarcadores();
+    dibujarTrazado();
     if (paradaActual && ultimasLlegadas) {
       const filas = filasLlegadas(ultimasLlegadas);
       actualizarPopup(paradaActual, filas || '<div class="popup-estado">Sin llegadas próximas.</div>');
     }
     cerrarLineas();
+  }
+
+  function vistazoLinea(codigo) {
+    if (codigo === lineaSeleccionada) return;
+    lineaVistazo = codigo;
+    refrescarMarcadores();
+    dibujarTrazado();
   }
 
   function actualizarBotonLineas() {
