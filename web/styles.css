@@ -356,7 +356,27 @@ main {
   font-size: 0.85rem;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.destino-texto {
+  display: inline-block;
+}
+
+.destino-texto.marquee {
+  display: inline-flex;
+  animation-name: desplazar;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.destino-texto.marquee > span {
+  flex: none;
+  white-space: nowrap;
+}
+
+@keyframes desplazar {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--recorrido, 0)); }
 }
 
 .fila-tiempo {

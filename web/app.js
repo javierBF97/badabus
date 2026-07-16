@@ -277,7 +277,7 @@
         return `
           <div class="fila-llegada${seleccionada ? " resaltada" : ""}"${estilo}>
             <span class="${claseChip}"${dataLinea} style="background:${color};color:${textoSobre(color)}">${escaparHtml(codigo)}</span>
-            <span class="fila-destino">${escaparHtml(destino)}</span>
+            <span class="fila-destino"><span class="destino-texto">${escaparHtml(destino)}</span></span>
             <span class="fila-tiempo">${escaparHtml(llegada.tiempo || "")}</span>
           </div>`;
       })
@@ -305,6 +305,28 @@
     if (boton) boton.addEventListener("click", () => seleccionarParada(parada));
     el.querySelectorAll(".chip-clicable").forEach((chip) => {
       chip.addEventListener("click", () => vistazoLinea(chip.dataset.linea));
+    });
+    setTimeout(() => activarMarquesinas(el), 60);
+  }
+
+  function activarMarquesinas(el) {
+    const GAP = 20;
+    el.querySelectorAll(".destino-texto").forEach((texto) => {
+      if (texto.children.length) return;
+      if (texto.scrollWidth - texto.parentElement.clientWidth <= 1) return;
+      const original = texto.textContent;
+      const copia1 = document.createElement("span");
+      copia1.textContent = original;
+      const copia2 = document.createElement("span");
+      copia2.textContent = original;
+      copia2.setAttribute("aria-hidden", "true");
+      texto.textContent = "";
+      texto.style.gap = `${GAP}px`;
+      texto.append(copia1, copia2);
+      const recorrido = Math.round(copia1.getBoundingClientRect().width + GAP);
+      texto.style.setProperty("--recorrido", `-${recorrido}px`);
+      texto.style.animationDuration = `${Math.max(7, Math.round(recorrido / 24))}s`;
+      texto.classList.add("marquee");
     });
   }
 
