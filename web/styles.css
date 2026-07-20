@@ -163,14 +163,16 @@ button:hover {
   border-radius: 5px;
 }
 
-#scrim-lineas {
+#scrim-lineas,
+#scrim-comollegar {
   position: fixed;
   inset: 0;
   background: rgba(20, 22, 26, 0.4);
   z-index: 1500;
 }
 
-#panel-lineas {
+#panel-lineas,
+#panel-comollegar {
   position: fixed;
   left: 0;
   right: 0;
@@ -226,7 +228,8 @@ button:hover {
 }
 
 @media (min-width: 720px) {
-  #panel-lineas {
+  #panel-lineas,
+  #panel-comollegar {
     left: auto;
     right: 12px;
     bottom: auto;
@@ -237,9 +240,170 @@ button:hover {
     border-radius: 12px;
   }
 
-  #scrim-lineas {
+  #scrim-lineas,
+  #scrim-comollegar {
     background: transparent;
   }
+}
+
+.cl-campo {
+  margin-bottom: 14px;
+}
+
+.cl-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.cl-elegida {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+
+.cl-punto {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.cl-nombre {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cl-quitar {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+.cl-buscar-campo {
+  position: relative;
+}
+
+.cl-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+
+.cl-resultados-busq {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 1700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.cl-modos {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.cl-modo {
+  flex: 1;
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.cl-buscar-ruta {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-weight: 500;
+  padding: 11px;
+  border-radius: 10px;
+  margin-top: 6px;
+}
+
+.cl-estado {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 12px 0 0;
+}
+
+#cl-resultados {
+  margin-top: 6px;
+}
+
+.cl-ruta {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.cl-ruta.activa {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.cl-ruta-cab {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.cl-tramo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.cl-tramo-txt {
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cl-transbordo {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0 4px 8px;
+}
+
+/* Con una ruta en pantalla, se ocultan buscador, líneas y parada más cercana. */
+body.ruta-activa .busqueda,
+body.ruta-activa #btn-lineas,
+body.ruta-activa #locate {
+  display: none;
+}
+
+/* Con una ruta activa, el scrim no debe tapar el mapa (o las paradas no se pueden clicar). */
+body.ruta-activa #scrim-comollegar {
+  display: none;
 }
 
 #theme-toggle {

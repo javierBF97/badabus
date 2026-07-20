@@ -34,6 +34,19 @@ def fetch_shape(shape_id: str, fetcher: Callable[..., bytes] = fetch) -> list[di
     return data
 
 
+def fetch_correspondencias(linea_id: str, fetcher: Callable[..., bytes] = fetch) -> tuple[str, dict]:
+    """Del endpoint correspondencias de una línea: devuelve (tipo_dia_actual, data por tipo de día).
+
+    data = {"LV": {stop_code: "L11,L13,..."} | [], "SAB": ..., "DOM": ...}.
+    Una línea que no circula un día trae ese día como lista vacía en vez de dict.
+    """
+    query = urlencode({"action": "correspondencias", "linea": linea_id})
+    payload = json.loads(fetcher(f"{BUS_API_BASE}?{query}"))
+    if not payload.get("ok"):
+        raise ValueError(f"la API respondió ok=false para correspondencias linea={linea_id}")
+    return payload.get("current_tipo_dia", ""), payload.get("data", {})
+
+
 def parse_tiempos(data: list[dict]) -> list[dict]:
     """De la respuesta de action=tiempos a llegadas con los metros como entero (o None)."""
     return [

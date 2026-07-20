@@ -30,6 +30,13 @@
   let avisoTimer = null;
   let peticionActual = 0;
   let cierreVistazoPendiente = null;
+  let red = {};
+  const paradaPorId = {};
+  let capaRuta;
+  let origenSel = null;
+  let destinoSel = null;
+  let modoMapa = null;
+  let rutaActiva = null;
 
   // ---------- Tema ----------
 
@@ -142,6 +149,7 @@
   function crearMapa() {
     map = L.map("map").setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
     capaTrazado = L.layerGroup().addTo(map);
+    capaRuta = L.layerGroup().addTo(map);
     capaMarcadores = L.layerGroup().addTo(map);
     map.on("popupclose", alCerrarPopup);
   }
@@ -179,6 +187,19 @@
 
   function estiloMarcador(parada) {
     const sirve = (codigo) => (parada.lineas || []).includes(codigo);
+    if (rutaActiva) {
+      // Modo ruta: resalta origen/transbordo/destino (clicables) y difumina el resto en gris.
+      if (parada.id === rutaActiva.origen) {
+        return { radius: 9, weight: 3, color: "#ffffff", fillColor: "#1D9E75", fillOpacity: 1 };
+      }
+      if (parada.id === rutaActiva.destino) {
+        return { radius: 9, weight: 3, color: "#ffffff", fillColor: "#E24B4A", fillOpacity: 1 };
+      }
+      if (rutaActiva.transbordos.has(parada.id)) {
+        return { radius: 8, weight: 3, color: "#555555", fillColor: "#ffffff", fillOpacity: 1 };
+      }
+      return { radius: 4, weight: 1, color: "#d5d5d5", fillColor: "#e6e6e6", fillOpacity: 0.5 };
+    }
     if (lineaVistazo) {
       // Vistazo como capa: resalta la línea del vistazo y la del selector; difumina el resto.
       if (sirve(lineaVistazo)) {
@@ -245,11 +266,13 @@
     if (!respLineas.ok || !respParadas.ok) throw new Error("datos no disponibles");
     lineas = await respLineas.json();
     paradas = await respParadas.json();
+    for (const parada of paradas) paradaPorId[parada.id] = parada;
     try {
-      const respShapes = await fetch("/data/shapes.json");
+      const [respShapes, respRed] = await Promise.all([fetch("/data/shapes.json"), fetch("/data/red.json")]);
       if (respShapes.ok) shapes = await respShapes.json();
+      if (respRed.ok) red = await respRed.json();
     } catch (err) {
-      shapes = {};
+      /* shapes/red opcionales: sin ellos se degradan trazado y ruta */
     }
   }
 
@@ -335,6 +358,13 @@
   }
 
   async function seleccionarParada(parada) {
+    if (modoMapa) {
+      const campo = modoMapa;
+      modoMapa = null;
+      fijarParada(campo, parada.id);
+      abrirComoLlegar();
+      return;
+    }
     paradaActual = parada;
     ultimasLlegadas = null;
     const idPeticion = ++peticionActual;
@@ -512,6 +542,296 @@
     seleccionarParada(parada);
   }
 
+  // ---------- Cómo llegar ----------
+
+  function abrirComoLlegar() {
+    document.getElementById("panel-comollegar").hidden = false;
+    document.getElementById("scrim-comollegar").hidden = false;
+    document.getElementById("btn-comollegar").setAttribute("aria-expanded", "true");
+    renderSelector("origen");
+    renderSelector("destino");
+  }
+
+  function cerrarComoLlegar() {
+    document.getElementById("panel-comollegar").hidden = true;
+    document.getElementById("scrim-comollegar").hidden = true;
+    document.getElementById("btn-comollegar").setAttribute("aria-expanded", "false");
+    origenSel = null;
+    destinoSel = null;
+    rutaActiva = null;
+    document.body.classList.remove("ruta-activa");
+    document.getElementById("cl-resultados").innerHTML = "";
+    capaRuta.clearLayers();
+    refrescarMarcadores();
+  }
+
+  function nombreParada(id) {
+    return (paradaPorId[id] || {}).nombre || id;
+  }
+
+  function fijarParada(campo, id) {
+    if (campo === "origen") origenSel = id;
+    else destinoSel = id;
+    renderSelector(campo);
+  }
+
+  function renderSelector(campo) {
+    const cont = document.getElementById(campo === "origen" ? "cl-origen" : "cl-destino");
+    const sel = campo === "origen" ? origenSel : destinoSel;
+    if (sel) {
+      cont.innerHTML = `
+        <div class="cl-elegida">
+          <span class="cl-punto"></span>
+          <span class="cl-nombre">${escaparHtml(nombreParada(sel))}</span>
+          <button type="button" class="cl-quitar" aria-label="Quitar">&times;</button>
+        </div>`;
+      cont.querySelector(".cl-quitar").addEventListener("click", () => {
+        if (campo === "origen") origenSel = null;
+        else destinoSel = null;
+        renderSelector(campo);
+      });
+      return;
+    }
+    cont.innerHTML = `
+      <div class="cl-buscar-campo">
+        <input type="text" class="cl-input" placeholder="Buscar parada…" aria-label="Buscar parada de ${campo}" autocomplete="off">
+        <div class="cl-resultados-busq" hidden></div>
+      </div>
+      <div class="cl-modos">
+        <button type="button" class="cl-modo" data-modo="mapa">En el mapa</button>
+        <button type="button" class="cl-modo" data-modo="cercana">Más cercana</button>
+      </div>`;
+    const input = cont.querySelector(".cl-input");
+    const res = cont.querySelector(".cl-resultados-busq");
+    input.addEventListener("input", () => renderBusquedaCL(res, campo, input.value));
+    input.addEventListener("blur", () => setTimeout(() => { res.hidden = true; }, 150));
+    cont.querySelector('[data-modo="mapa"]').addEventListener("click", () => activarModoMapa(campo));
+    cont.querySelector('[data-modo="cercana"]').addEventListener("click", () => elegirCercana(campo));
+  }
+
+  function renderBusquedaCL(cont, campo, texto) {
+    cont.innerHTML = "";
+    const lista = buscarParadas(texto);
+    if (!lista.length) {
+      cont.hidden = true;
+      return;
+    }
+    for (const parada of lista) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "resultado-item";
+      item.textContent = parada.nombre;
+      item.addEventListener("mousedown", (evento) => {
+        evento.preventDefault();
+        fijarParada(campo, parada.id);
+      });
+      cont.appendChild(item);
+    }
+    cont.hidden = false;
+  }
+
+  function activarModoMapa(campo) {
+    // Solo oculta el panel para poder tocar el mapa; conserva el estado (no es salir).
+    modoMapa = campo;
+    document.getElementById("panel-comollegar").hidden = true;
+    document.getElementById("scrim-comollegar").hidden = true;
+    mostrarAviso(campo === "origen" ? "Toca la parada de origen en el mapa" : "Toca la parada de destino en el mapa");
+  }
+
+  function elegirCercana(campo) {
+    if (!navigator.geolocation) {
+      mostrarAviso("La geolocalización no está disponible en este dispositivo.");
+      return;
+    }
+    mostrarAviso("Buscando tu ubicación…");
+    navigator.geolocation.getCurrentPosition(
+      (posicion) => {
+        const cercana = paradaMasCercana(posicion.coords.latitude, posicion.coords.longitude, paradas);
+        if (cercana) fijarParada(campo, cercana.id);
+        else mostrarAviso("No se encontró ninguna parada cercana.");
+      },
+      () => mostrarAviso("No se pudo obtener tu ubicación.")
+    );
+  }
+
+  async function buscarRuta() {
+    const cont = document.getElementById("cl-resultados");
+    if (!origenSel || !destinoSel) {
+      cont.innerHTML = '<p class="cl-estado">Elige origen y destino.</p>';
+      return;
+    }
+    cont.innerHTML = '<p class="cl-estado">Buscando ruta…</p>';
+    try {
+      const resp = await fetch(`/api/plan?origen=${encodeURIComponent(origenSel)}&destino=${encodeURIComponent(destinoSel)}`);
+      if (!resp.ok) throw new Error("plan");
+      const data = await resp.json();
+      renderRutas(data.rutas || []);
+    } catch (err) {
+      cont.innerHTML = '<p class="cl-estado">No se pudo calcular la ruta.</p>';
+    }
+  }
+
+  function renderRutas(rutas) {
+    const cont = document.getElementById("cl-resultados");
+    if (!rutas.length) {
+      cont.innerHTML = '<p class="cl-estado">No se encontró ruta (prueba con otras paradas).</p>';
+      capaRuta.clearLayers();
+      rutaActiva = null;
+      document.body.classList.remove("ruta-activa");
+      refrescarMarcadores();
+      return;
+    }
+    cont.innerHTML = "";
+    rutas.forEach((ruta, idx) => {
+      const div = document.createElement("div");
+      div.className = "cl-ruta" + (idx === 0 ? " activa" : "");
+      const nt = ruta.length - 1;
+      const partes = [`<div class="cl-ruta-cab">${nt === 0 ? "Directo" : nt + (nt > 1 ? " transbordos" : " transbordo")}</div>`];
+      ruta.forEach((tramo, i) => {
+        const color = colorLinea(tramo.linea);
+        partes.push(`<div class="cl-tramo"><span class="chip-linea" style="background:${color};color:${textoSobre(color)}">${escaparHtml(tramo.linea)}</span><span class="cl-tramo-txt">${escaparHtml(nombreParada(tramo.subir))} → ${escaparHtml(nombreParada(tramo.bajar))}</span></div>`);
+        if (i < ruta.length - 1) partes.push(`<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`);
+      });
+      div.innerHTML = partes.join("");
+      div.addEventListener("click", () => {
+        cont.querySelectorAll(".cl-ruta").forEach((r) => r.classList.remove("activa"));
+        div.classList.add("activa");
+        dibujarRuta(ruta);
+      });
+      cont.appendChild(div);
+    });
+    dibujarRuta(rutas[0]);
+  }
+
+  function dibujarRuta(ruta) {
+    capaRuta.clearLayers();
+    const grupo = L.featureGroup();
+    for (const tramo of ruta) {
+      const puntos = puntosShape(tramo.linea, tramo.subir, tramo.bajar) || puntosPorParadas(tramo);
+      if (puntos && puntos.length >= 2) {
+        L.polyline(puntos, { color: colorLinea(tramo.linea), weight: 5, opacity: 0.9 }).addTo(grupo);
+      }
+    }
+    rutaActiva = {
+      origen: ruta[0].subir,
+      destino: ruta[ruta.length - 1].bajar,
+      transbordos: new Set(ruta.slice(0, -1).map((tramo) => tramo.bajar)),
+    };
+    document.body.classList.add("ruta-activa");
+    if (grupo.getLayers().length) grupo.addTo(capaRuta);
+    // Los marcadores de origen/transbordo/destino los pinta refrescarMarcadores (clicables).
+    refrescarMarcadores();
+    if (grupo.getLayers().length) map.fitBounds(grupo.getBounds(), { padding: [40, 40] });
+  }
+
+  function puntosPorParadas(tramo) {
+    const seq = red[tramo.linea] || [];
+    const i = seq.indexOf(tramo.subir);
+    if (i < 0) return null;
+    const rel = seq.slice(i + 1).indexOf(tramo.bajar);
+    if (rel < 0) return null;
+    return seq.slice(i, i + rel + 2)
+      .map((id) => paradaPorId[id])
+      .filter((p) => p && coordsValidas(p))
+      .map((p) => [p.lat, p.lon]);
+  }
+
+  // Distancia^2 máxima permitida entre una parada del tramo y el trazado elegido (~200 m).
+  const LIMITE_SHAPE2 = 0.0018 * 0.0018;
+  const trazadoContinuo = {};
+
+  function distancia2pp(a, b) {
+    const dlat = a[0] - b[0];
+    const dlon = a[1] - b[1];
+    return dlat * dlat + dlon * dlon;
+  }
+
+  // Une los ficheros de shape de una línea en un único trazado continuo, encadenando
+  // cada segmento por el extremo más próximo (invirtiéndolo si hace falta). Un tramo de
+  // ruta puede cruzar de un fichero a otro (ida->vuelta), así hay una sola polilínea.
+  function trazadoDe(linea) {
+    if (trazadoContinuo[linea]) return trazadoContinuo[linea];
+    const trazado = shapes[linea];
+    let cadena = [];
+    if (trazado) {
+      const segmentos = Object.values(trazado).filter((s) => s.length >= 2).map((s) => s.slice());
+      if (segmentos.length) {
+        cadena = segmentos.shift();
+        while (segmentos.length) {
+          const fin = cadena[cadena.length - 1];
+          let idx = 0;
+          let invertir = false;
+          let mejor = Infinity;
+          segmentos.forEach((s, n) => {
+            const gIni = distancia2pp(fin, s[0]);
+            const gFin = distancia2pp(fin, s[s.length - 1]);
+            if (gIni < mejor) { mejor = gIni; idx = n; invertir = false; }
+            if (gFin < mejor) { mejor = gFin; idx = n; invertir = true; }
+          });
+          const s = segmentos.splice(idx, 1)[0];
+          if (invertir) s.reverse();
+          cadena = cadena.concat(s);
+        }
+      }
+    }
+    trazadoContinuo[linea] = cadena;
+    return cadena;
+  }
+
+  function puntosShape(linea, subir, bajar) {
+    const seq = red[linea] || [];
+    const i = seq.indexOf(subir);
+    if (i < 0) return null;
+    const rel = seq.slice(i + 1).indexOf(bajar);
+    if (rel < 0) return null;
+    // Todas las paradas del tramo (en orden) sirven de anclas para recortar el trazado.
+    const anclas = seq.slice(i, i + rel + 2)
+      .map((id) => paradaPorId[id])
+      .filter((p) => p && coordsValidas(p));
+    const cadena = trazadoDe(linea);
+    if (cadena.length < 2 || anclas.length < 2) return null;
+
+    let mejor = null;
+    // Se prueban ambas direcciones (la línea puede recorrer el trazado al revés).
+    for (const puntos of [cadena, cadena.slice().reverse()]) {
+      let prev = 0;
+      let error = 0;
+      const idx = [];
+      for (const p of anclas) {
+        let k = prev;
+        let m = Infinity;
+        // Anclaje monótono: para cada parada, el punto más cercano a partir del anterior.
+        for (let n = prev; n < puntos.length; n++) {
+          const d = distancia2(puntos[n], p);
+          if (d < m) { m = d; k = n; }
+        }
+        idx.push(k);
+        prev = k;
+        error += m;
+      }
+      if (!mejor || error < mejor.error) {
+        mejor = { error, tramo: puntos.slice(idx[0], idx[idx.length - 1] + 1) };
+      }
+    }
+    if (!mejor || mejor.tramo.length < 2) return null;
+    // Si alguna parada del tramo queda lejos del trazado, mejor rectas entre paradas.
+    for (const p of anclas) {
+      let m = Infinity;
+      for (const q of mejor.tramo) {
+        const d = distancia2(q, p);
+        if (d < m) m = d;
+      }
+      if (m > LIMITE_SHAPE2) return null;
+    }
+    return mejor.tramo;
+  }
+
+  function distancia2(punto, parada) {
+    const dlat = punto[0] - parada.lat;
+    const dlon = punto[1] - parada.lon;
+    return dlat * dlat + dlon * dlon;
+  }
+
   // ---------- Inicio ----------
 
   function inicializar() {
@@ -520,12 +840,17 @@
     document.getElementById("btn-lineas").addEventListener("click", abrirLineas);
     document.getElementById("cerrar-lineas").addEventListener("click", cerrarLineas);
     document.getElementById("scrim-lineas").addEventListener("click", cerrarLineas);
+    document.getElementById("btn-comollegar").addEventListener("click", abrirComoLlegar);
+    document.getElementById("cerrar-comollegar").addEventListener("click", cerrarComoLlegar);
+    document.getElementById("scrim-comollegar").addEventListener("click", cerrarComoLlegar);
+    document.getElementById("cl-buscar").addEventListener("click", buscarRuta);
     const buscador = document.getElementById("buscar-parada");
     buscador.addEventListener("input", (evento) => renderResultados(buscarParadas(evento.target.value)));
     buscador.addEventListener("blur", ocultarResultados);
     document.addEventListener("keydown", (evento) => {
       if (evento.key === "Escape") {
         cerrarLineas();
+        cerrarComoLlegar();
         ocultarResultados();
         if (map) map.closePopup();
       }

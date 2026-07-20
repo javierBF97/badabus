@@ -1,0 +1,77 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from badabus import planner
+
+# Red mínima de prueba:
+#   A: 1 -> 2 -> 3 -> 4
+#   B: 3 -> 5 -> 6   (comparte la 3 con A: transbordo posible)
+#   C: 2 -> 7        (comparte la 2 con A)
+#   D: 1 -> 99       (existe en la red pero NO circula hoy)
+RED = {
+    "A": ["1", "2", "3", "4"],
+    "B": ["3", "5", "6"],
+    "C": ["2", "7"],
+    "D": ["1", "99"],
+}
+# Solo A, B y C circulan hoy (D queda fuera). Los valores no los usa el planner.
+TRANSBORDOS = {"tipo_dia": "LV", "lineas": {"A": {}, "B": {}, "C": {}}}
+
+
+class TestPlanificar(unittest.TestCase):
+    def plan(self, origen, destino, **kw):
+        return planner.planificar(origen, destino, RED, TRANSBORDOS, **kw)
+
+    def test_ruta_directa(self):
+        rutas = self.plan("1", "4")
+        self.assertIn([{"linea": "A", "subir": "1", "bajar": "4"}], rutas)
+        # Con ruta directa no debe proponer nada con transbordos.
+        self.assertTrue(all(len(r) == 1 for r in rutas))
+
+    def test_un_transbordo(self):
+        rutas = self.plan("1", "6")
+        self.assertEqual(rutas, [[
+            {"linea": "A", "subir": "1", "bajar": "3"},
+            {"linea": "B", "subir": "3", "bajar": "6"},
+        ]])
+
+    def test_sin_ruta(self):
+        self.assertEqual(self.plan("1", "inexistente"), [])
+
+    def test_origen_igual_destino(self):
+        # Misma parada: no hay ruta (evita la "vuelta entera" en líneas circulares).
+        self.assertEqual(self.plan("2", "2"), [])
+
+    def test_prefiere_directa_a_transbordo(self):
+        # 2 -> 4 es directo por A; no debe mezclar rutas con transbordo.
+        rutas = self.plan("2", "4")
+        self.assertEqual(rutas, [[{"linea": "A", "subir": "2", "bajar": "4"}]])
+
+    def test_solo_usa_lineas_activas(self):
+        # 1 -> 99 solo sería posible por la línea D, que hoy no circula.
+        self.assertEqual(self.plan("1", "99"), [])
+
+    def test_no_viaja_hacia_atras(self):
+        # En A la 4 va después de la 1, así que 4 -> 1 no es alcanzable en ese sentido.
+        self.assertEqual(self.plan("4", "1"), [])
+
+    def test_respeta_max_transbordos(self):
+        # 1 -> 6 necesita un transbordo; con max_transbordos=0 no hay ruta.
+        self.assertEqual(self.plan("1", "6", max_transbordos=0), [])
+
+
+class TestCargarDatos(unittest.TestCase):
+    def test_lee_red_y_transbordos(self):
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = Path(d)
+            (data_dir / "red.json").write_text(json.dumps(RED), encoding="utf-8")
+            (data_dir / "transbordos.json").write_text(json.dumps(TRANSBORDOS), encoding="utf-8")
+            red, transbordos = planner.cargar_datos(data_dir)
+        self.assertEqual(red, RED)
+        self.assertEqual(transbordos, TRANSBORDOS)
+
+
+if __name__ == "__main__":
+    unittest.main()

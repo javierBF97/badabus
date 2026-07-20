@@ -57,6 +57,33 @@ def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict
     return stops, meta, red, shapes
 
 
+def recolectar_transbordos(fetcher: Callable[..., bytes] = api.fetch) -> dict:
+    """Baja correspondencias por línea y agrega los transbordos del día actual.
+
+    Devuelve {"tipo_dia": str, "lineas": {lin: {stop_code: [líneas de transbordo]}}}.
+    Solo incluye las líneas que circulan hoy (las que traen dict para ese día; las que
+    no circulan traen lista vacía y se omiten).
+    """
+    lineas = api.fetch_json("lineas", fetcher=fetcher)
+    tipo_dia = ""
+    por_linea: dict[str, dict] = {}
+    for linea in lineas:
+        try:
+            td, data = api.fetch_correspondencias(linea["id"], fetcher=fetcher)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"  ! sin transbordos para línea {linea.get('lin', linea.get('id', '?'))}: {exc}")
+            continue
+        tipo_dia = td or tipo_dia
+        dia = data.get(td)
+        if not isinstance(dia, dict):
+            continue
+        por_linea[linea["lin"]] = {
+            stop: [normalizar_linea(c) for c in str(val).split(",") if c.strip()]
+            for stop, val in dia.items()
+        }
+    return {"tipo_dia": tipo_dia, "lineas": por_linea}
+
+
 def save_json(obj: list | dict, path: str) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -70,7 +97,12 @@ def main() -> None:
     save_json(meta, str(data_dir / "lineas.json"))
     save_json(red, str(data_dir / "red.json"))
     save_json(shapes, str(data_dir / "shapes.json"))
-    print(f"Guardadas {len(stops)} paradas, {len(meta)} líneas, {len(red)} recorridos y {len(shapes)} trazados en {data_dir}")
+    transbordos = recolectar_transbordos()
+    save_json(transbordos, str(data_dir / "transbordos.json"))
+    print(
+        f"Guardadas {len(stops)} paradas, {len(meta)} líneas, {len(red)} recorridos, "
+        f"{len(shapes)} trazados y transbordos de {len(transbordos['lineas'])} líneas en {data_dir}"
+    )
 
 
 def parada_valida(parada: dict) -> bool:
@@ -82,6 +114,14 @@ def parada_valida(parada: dict) -> bool:
     except (KeyError, ValueError, TypeError):
         return False
     return bool(parada.get("stop_code") and parada.get("stop_name"))
+
+
+def normalizar_linea(codigo: str) -> str:
+    """Código de correspondencias a código de línea: quita la 'L' inicial y aplica alias BGM→BG."""
+    c = codigo.strip()
+    if c.startswith("L"):
+        c = c[1:]
+    return {"BGM1": "BG1", "BGM2": "BG2"}.get(c, c)
 
 
 def natural_key(name: str) -> tuple[int, list[tuple[int, int, str]]]:

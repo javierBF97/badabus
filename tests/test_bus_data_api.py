@@ -70,6 +70,30 @@ class TestFetchShape(unittest.TestCase):
             api.fetch_shape("X", fetcher=fake)
 
 
+class TestFetchCorrespondencias(unittest.TestCase):
+    def test_returns_tipo_dia_and_data(self):
+        seen = {}
+        def fake(url, timeout=10):
+            seen["url"] = url
+            return b'{"ok":true,"current_tipo_dia":"LV","data":{"LV":{"202":"L11,L13"},"SAB":[]}}'
+        td, data = api.fetch_correspondencias("TRIP_100007", fetcher=fake)
+        self.assertIn("action=correspondencias", seen["url"])
+        self.assertIn("linea=TRIP_100007", seen["url"])
+        self.assertEqual(td, "LV")
+        self.assertEqual(data, {"LV": {"202": "L11,L13"}, "SAB": []})
+
+    def test_raises_when_not_ok(self):
+        def fake(url, timeout=10):
+            return b'{"ok":false}'
+        with self.assertRaises(ValueError):
+            api.fetch_correspondencias("X", fetcher=fake)
+
+    def test_defaults_when_fields_missing(self):
+        def fake(url, timeout=10):
+            return b'{"ok":true}'
+        self.assertEqual(api.fetch_correspondencias("X", fetcher=fake), ("", {}))
+
+
 class TestParseShape(unittest.TestCase):
     def test_groups_by_sentido_in_order(self):
         puntos = [

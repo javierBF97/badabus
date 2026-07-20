@@ -1,15 +1,17 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from badabus import bus_data_api as api
+from badabus import planner
 
 HOST = "127.0.0.1"
 PORT = 8000
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 WEB_DIR = BASE_DIR / "web"
-DATA_FILES = {"paradas.json", "lineas.json", "red.json", "shapes.json"}
+DATA_FILES = {"paradas.json", "lineas.json", "red.json", "shapes.json", "transbordos.json"}
 WEB_FILES = {"index.html", "app.js", "styles.css"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -24,6 +26,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path.startswith("/api/parada/"):
             self.handle_tiempos(path.removeprefix("/api/parada/"))
+        elif path == "/api/plan":
+            self.handle_plan()
         elif path.startswith("/data/"):
             self.handle_static(path.removeprefix("/data/"), DATA_DIR, DATA_FILES)
         elif path == "/":
@@ -56,6 +60,24 @@ class Handler(BaseHTTPRequestHandler):
             print(f"  ! error consultando tiempos de {stop_id}: {exc}")
             self.fail(502, "no se pudo consultar el servicio")
             return
+        self.send_bytes(200, body, "application/json; charset=utf-8")
+
+    def handle_plan(self) -> None:
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        params = parse_qs(query)
+        origen = (params.get("origen") or [""])[0]
+        destino = (params.get("destino") or [""])[0]
+        if not origen.isdigit() or not destino.isdigit():
+            self.fail(400, "origen y destino deben ser ids de parada")
+            return
+        try:
+            red, transbordos = planner.cargar_datos()
+            rutas = planner.planificar(origen, destino, red, transbordos)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            print(f"  ! error planificando {origen}->{destino}: {exc}")
+            self.fail(502, "no se pudo calcular la ruta")
+            return
+        body = json.dumps({"rutas": rutas}, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
 
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:

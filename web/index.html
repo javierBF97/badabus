@@ -28,6 +28,7 @@
       <div id="resultados-busqueda" role="listbox" hidden></div>
     </div>
     <div class="acciones">
+      <button id="btn-comollegar" type="button" aria-haspopup="true" aria-expanded="false">Cómo llegar</button>
       <button id="btn-lineas" type="button" aria-haspopup="true" aria-expanded="false">
         <span class="btn-chip" id="btn-chip" style="display:none"></span>
         <span id="btn-texto">Líneas</span>
@@ -50,6 +51,23 @@
       <button type="button" id="cerrar-lineas" aria-label="Cerrar">&times;</button>
     </div>
     <div id="chips-lineas"></div>
+  </aside>
+  <div id="scrim-comollegar" hidden></div>
+  <aside id="panel-comollegar" hidden role="dialog" aria-modal="true" aria-label="Cómo llegar">
+    <div class="panel-lineas-cabecera">
+      <span>Cómo llegar</span>
+      <button type="button" id="cerrar-comollegar" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="cl-campo">
+      <div class="cl-label">Origen</div>
+      <div id="cl-origen"></div>
+    </div>
+    <div class="cl-campo">
+      <div class="cl-label">Destino</div>
+      <div id="cl-destino"></div>
+    </div>
+    <button type="button" id="cl-buscar" class="cl-buscar-ruta">Buscar ruta</button>
+    <div id="cl-resultados"></div>
   </aside>
 </body>
 </html>

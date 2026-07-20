@@ -102,6 +102,49 @@ class TestServer(unittest.TestCase):
         status, _ = self.get("/data/app.js")
         self.assertEqual(status, 404)
 
+    def test_plan_ok(self):
+        red = {"A": ["1", "2", "3"]}
+        transbordos = {"tipo_dia": "LV", "lineas": {"A": {}}}
+        original = server.planner.cargar_datos
+        server.planner.cargar_datos = lambda *a, **kw: (red, transbordos)
+        try:
+            status, body = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"rutas": [[{"linea": "A", "subir": "1", "bajar": "3"}]]})
+
+    def test_plan_invalid_ids(self):
+        status, _ = self.get("/api/plan?origen=abc&destino=3")
+        self.assertEqual(status, 400)
+
+    def test_plan_missing_params(self):
+        status, _ = self.get("/api/plan?origen=1")
+        self.assertEqual(status, 400)
+
+    def test_plan_upstream_error(self):
+        def boom(*a, **kw):
+            raise OSError("sin datos")
+        original = server.planner.cargar_datos
+        server.planner.cargar_datos = boom
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, _ = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = original
+        self.assertEqual(status, 502)
+
+    def test_plan_malformed_data(self):
+        # transbordos que no es dict (fichero corrupto) -> 502 limpio, no 500 con traza.
+        original = server.planner.cargar_datos
+        server.planner.cargar_datos = lambda *a, **kw: ({"A": ["1", "2", "3"]}, [])
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, _ = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = original
+        self.assertEqual(status, 502)
+
 
 if __name__ == "__main__":
     unittest.main()
