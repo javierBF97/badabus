@@ -545,6 +545,8 @@
   // ---------- Cómo llegar ----------
 
   function abrirComoLlegar() {
+    // El trazado de la línea elegida se solaparía con el de la ruta: se quita.
+    if (lineaSeleccionada || lineaVistazo) seleccionarLinea("");
     document.getElementById("panel-comollegar").hidden = false;
     document.getElementById("scrim-comollegar").hidden = false;
     document.getElementById("btn-comollegar").setAttribute("aria-expanded", "true");
@@ -736,46 +738,82 @@
       .map((p) => [p.lat, p.lon]);
   }
 
-  // Distancia^2 máxima permitida entre una parada del tramo y el trazado elegido (~200 m).
-  const LIMITE_SHAPE2 = 0.0018 * 0.0018;
-  const trazadoContinuo = {};
+  const MAX_TRAMOS_SHAPE = 3;
+  const canonicoLinea = {};
 
-  function distancia2pp(a, b) {
-    const dlat = a[0] - b[0];
-    const dlon = a[1] - b[1];
-    return dlat * dlat + dlon * dlon;
+  function permutaciones(items) {
+    if (items.length <= 1) return [items];
+    return items.flatMap((x, i) =>
+      permutaciones([...items.slice(0, i), ...items.slice(i + 1)]).map((resto) => [x, ...resto])
+    );
   }
 
-  // Une los ficheros de shape de una línea en un único trazado continuo, encadenando
-  // cada segmento por el extremo más próximo (invirtiéndolo si hace falta). Un tramo de
-  // ruta puede cruzar de un fichero a otro (ida->vuelta), así hay una sola polilínea.
-  function trazadoDe(linea) {
-    if (trazadoContinuo[linea]) return trazadoContinuo[linea];
-    const trazado = shapes[linea];
-    let cadena = [];
-    if (trazado) {
-      const segmentos = Object.values(trazado).filter((s) => s.length >= 2).map((s) => s.slice());
-      if (segmentos.length) {
-        cadena = segmentos.shift();
-        while (segmentos.length) {
-          const fin = cadena[cadena.length - 1];
-          let idx = 0;
-          let invertir = false;
-          let mejor = Infinity;
-          segmentos.forEach((s, n) => {
-            const gIni = distancia2pp(fin, s[0]);
-            const gFin = distancia2pp(fin, s[s.length - 1]);
-            if (gIni < mejor) { mejor = gIni; idx = n; invertir = false; }
-            if (gFin < mejor) { mejor = gFin; idx = n; invertir = true; }
-          });
-          const s = segmentos.splice(idx, 1)[0];
-          if (invertir) s.reverse();
-          cadena = cadena.concat(s);
+  // Alineamiento monótono óptimo (programación dinámica) de las paradas sobre una polilínea:
+  // para cada parada, el índice del punto que le corresponde, en orden no decreciente.
+  // Al usar toda la secuencia de la línea, el contexto global resuelve las ambigüedades
+  // de las calles por las que se pasa dos veces (ida y vuelta).
+  function alinear(puntos, anclas) {
+    const n = puntos.length;
+    const k = anclas.length;
+    let previo = new Float64Array(n);
+    const elecciones = [];
+    for (let j = 0; j < n; j++) previo[j] = distancia2(puntos[j], anclas[0]);
+    for (let m = 1; m < k; m++) {
+      const actual = new Float64Array(n);
+      const eleccion = new Int32Array(n);
+      let menor = Infinity;
+      let menorIdx = 0;
+      for (let j = 0; j < n; j++) {
+        if (previo[j] < menor) { menor = previo[j]; menorIdx = j; }
+        actual[j] = distancia2(puntos[j], anclas[m]) + menor;
+        eleccion[j] = menorIdx;
+      }
+      elecciones.push(eleccion);
+      previo = actual;
+    }
+    let fin = 0;
+    let coste = Infinity;
+    for (let j = 0; j < n; j++) if (previo[j] < coste) { coste = previo[j]; fin = j; }
+    const idx = new Array(k);
+    let j = fin;
+    for (let m = k - 1; m >= 1; m--) { idx[m] = j; j = elecciones[m - 1][j]; }
+    idx[0] = j;
+    return { idx, coste };
+  }
+
+  // Trazado canónico de una línea: sus tramos de shape ordenados y orientados de la forma
+  // que mejor explica su secuencia de paradas, con el punto que corresponde a cada parada.
+  function canonicoDe(linea) {
+    if (linea in canonicoLinea) return canonicoLinea[linea];
+    const trazado = shapes[linea] || {};
+    const seq = red[linea] || [];
+    const tramos = Object.values(trazado).filter((s) => s.length >= 2);
+    const paradasSeq = seq.map((id) => paradaPorId[id]);
+    const validas = paradasSeq.filter((p) => p && coordsValidas(p));
+    let mejor = null;
+    if (tramos.length && tramos.length <= MAX_TRAMOS_SHAPE && validas.length >= 2) {
+      for (const orden of permutaciones(tramos.map((_, i) => i))) {
+        for (let mascara = 0; mascara < (1 << tramos.length); mascara++) {
+          let cadena = [];
+          for (const i of orden) {
+            const s = tramos[i];
+            cadena = cadena.concat((mascara >> i) & 1 ? s.slice().reverse() : s);
+          }
+          const alineado = alinear(cadena, validas);
+          if (!mejor || alineado.coste < mejor.coste) {
+            mejor = { coste: alineado.coste, puntos: cadena, idx: alineado.idx };
+          }
         }
       }
+      const porSeq = new Array(paradasSeq.length).fill(null);
+      let v = 0;
+      for (let z = 0; z < paradasSeq.length; z++) {
+        if (paradasSeq[z] && coordsValidas(paradasSeq[z])) porSeq[z] = mejor.idx[v++];
+      }
+      mejor.porSeq = porSeq;
     }
-    trazadoContinuo[linea] = cadena;
-    return cadena;
+    canonicoLinea[linea] = mejor;
+    return mejor;
   }
 
   function puntosShape(linea, subir, bajar) {
@@ -784,46 +822,27 @@
     if (i < 0) return null;
     const rel = seq.slice(i + 1).indexOf(bajar);
     if (rel < 0) return null;
-    // Todas las paradas del tramo (en orden) sirven de anclas para recortar el trazado.
-    const anclas = seq.slice(i, i + rel + 2)
-      .map((id) => paradaPorId[id])
-      .filter((p) => p && coordsValidas(p));
-    const cadena = trazadoDe(linea);
-    if (cadena.length < 2 || anclas.length < 2) return null;
-
-    let mejor = null;
-    // Se prueban ambas direcciones (la línea puede recorrer el trazado al revés).
-    for (const puntos of [cadena, cadena.slice().reverse()]) {
-      let prev = 0;
-      let error = 0;
-      const idx = [];
-      for (const p of anclas) {
-        let k = prev;
-        let m = Infinity;
-        // Anclaje monótono: para cada parada, el punto más cercano a partir del anterior.
-        for (let n = prev; n < puntos.length; n++) {
-          const d = distancia2(puntos[n], p);
-          if (d < m) { m = d; k = n; }
-        }
-        idx.push(k);
-        prev = k;
-        error += m;
+    const canonico = canonicoDe(linea);
+    if (!canonico) return null;
+    // El alineamiento es monótono, así que el tramo ya sale en orden de marcha.
+    const j = i + rel + 1;
+    if (canonico.porSeq[i] == null || canonico.porSeq[j] == null) return null;
+    if (canonico.porSeq[j] < canonico.porSeq[i]) return null;
+    // Se recorre el trazado insertando cada parada en su sitio, para que la ruta pase
+    // exactamente por todas (si no, quedan desvíos y huecos en los transbordos).
+    const tramo = [];
+    let previo = null;
+    for (let z = i; z <= j; z++) {
+      const k = canonico.porSeq[z];
+      const parada = paradaPorId[seq[z]];
+      if (k == null || !parada || !coordsValidas(parada)) continue;
+      if (previo != null && k > previo + 1) {
+        for (const punto of canonico.puntos.slice(previo + 1, k)) tramo.push(punto);
       }
-      if (!mejor || error < mejor.error) {
-        mejor = { error, tramo: puntos.slice(idx[0], idx[idx.length - 1] + 1) };
-      }
+      tramo.push([parada.lat, parada.lon]);
+      previo = k;
     }
-    if (!mejor || mejor.tramo.length < 2) return null;
-    // Si alguna parada del tramo queda lejos del trazado, mejor rectas entre paradas.
-    for (const p of anclas) {
-      let m = Infinity;
-      for (const q of mejor.tramo) {
-        const d = distancia2(q, p);
-        if (d < m) m = d;
-      }
-      if (m > LIMITE_SHAPE2) return null;
-    }
-    return mejor.tramo;
+    return tramo.length >= 2 ? tramo : null;
   }
 
   function distancia2(punto, parada) {
