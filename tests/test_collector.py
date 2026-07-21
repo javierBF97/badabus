@@ -35,7 +35,10 @@ def fake(url, timeout=10):
     if "shape002_A.json" in url:
         return b'[{"shape_pt_lat":"38.87","shape_pt_lon":"-6.97","sentido":"1"}]'
     if "shapeTRIP_100007.json" in url:
-        return b'[{"shape_pt_lat":"38.82","shape_pt_lon":"-6.92","sentido":"1"},{"shape_pt_lat":"38.80","shape_pt_lon":"-6.90","sentido":"2"}]'
+        return (
+            b'[{"shape_pt_lat":"38.82","shape_pt_lon":"-6.92","sentido":"1"},'
+            b'{"shape_pt_lat":"38.80","shape_pt_lon":"-6.90","sentido":"2"}]'
+        )
     raise AssertionError("url inesperada: " + url)
 
 
