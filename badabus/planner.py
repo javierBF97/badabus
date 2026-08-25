@@ -6,20 +6,22 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 def cargar_datos(data_dir: Path = DATA_DIR) -> tuple[dict, dict]:
     red = json.loads((data_dir / "red.json").read_text(encoding="utf-8"))
-    transbordos = json.loads((data_dir / "transbordos.json").read_text(encoding="utf-8"))
-    return red, transbordos
+    dias = json.loads((data_dir / "dias.json").read_text(encoding="utf-8"))
+    return red, dias
 
 
-def planificar(origen: str, destino: str, red: dict, transbordos: dict, max_transbordos: int = 2) -> list[list[dict]]:
+def planificar(
+    origen: str, destino: str, red: dict, activas, max_transbordos: int = 2
+) -> list[list[dict]]:
     """Rutas de la parada origen a la parada destino con <= max_transbordos.
 
     Cada ruta es una lista de tramos {linea, subir, bajar}. Se devuelven las mejores
-    (primero menos transbordos, luego menos paradas). Solo usa las líneas que circulan hoy.
+    (primero menos transbordos, luego menos paradas). `activas` son los códigos de las
+    líneas que circulan el día consultado.
     """
     if origen == destino:
         return []
-    activas = set(transbordos.get("lineas", {}))
-    seq = {lin: red[lin] for lin in activas if lin in red}
+    seq = {lin: red[lin] for lin in set(activas) if lin in red}
     por_parada: dict[str, set] = {}
     for lin, paradas in seq.items():
         for stop in paradas:

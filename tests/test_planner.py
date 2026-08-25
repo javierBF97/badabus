@@ -16,13 +16,14 @@ RED = {
     "C": ["2", "7"],
     "D": ["1", "99"],
 }
-# Solo A, B y C circulan hoy (D queda fuera). Los valores no los usa el planner.
-TRANSBORDOS = {"tipo_dia": "LV", "lineas": {"A": {}, "B": {}, "C": {}}}
+# Solo A, B y C circulan hoy (D queda fuera).
+ACTIVAS = ["A", "B", "C"]
+DIAS = {"LV": ACTIVAS, "SAB": ["A"], "DOM": []}
 
 
 class TestPlanificar(unittest.TestCase):
     def plan(self, origen, destino, **kw):
-        return planner.planificar(origen, destino, RED, TRANSBORDOS, **kw)
+        return planner.planificar(origen, destino, RED, ACTIVAS, **kw)
 
     def test_ruta_directa(self):
         rutas = self.plan("1", "4")
@@ -61,16 +62,24 @@ class TestPlanificar(unittest.TestCase):
         # 1 -> 6 necesita un transbordo; con max_transbordos=0 no hay ruta.
         self.assertEqual(self.plan("1", "6", max_transbordos=0), [])
 
+    def test_conjunto_de_activas_distinto(self):
+        # Con solo la A activa, la 1 -> 6 (que necesita la B) deja de existir.
+        self.assertEqual(planner.planificar("1", "6", RED, ["A"]), [])
+        self.assertEqual(
+            planner.planificar("1", "4", RED, ["A"]),
+            [[{"linea": "A", "subir": "1", "bajar": "4"}]],
+        )
+
 
 class TestCargarDatos(unittest.TestCase):
-    def test_lee_red_y_transbordos(self):
+    def test_lee_red_y_dias(self):
         with tempfile.TemporaryDirectory() as d:
             data_dir = Path(d)
             (data_dir / "red.json").write_text(json.dumps(RED), encoding="utf-8")
-            (data_dir / "transbordos.json").write_text(json.dumps(TRANSBORDOS), encoding="utf-8")
-            red, transbordos = planner.cargar_datos(data_dir)
+            (data_dir / "dias.json").write_text(json.dumps(DIAS), encoding="utf-8")
+            red, dias = planner.cargar_datos(data_dir)
         self.assertEqual(red, RED)
-        self.assertEqual(transbordos, TRANSBORDOS)
+        self.assertEqual(dias, DIAS)
 
 
 if __name__ == "__main__":

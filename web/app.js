@@ -31,6 +31,7 @@
   let peticionActual = 0;
   let cierreVistazoPendiente = null;
   let red = {};
+  let dias = {};
   const paradaPorId = {};
   let capaRuta;
   let origenSel = null;
@@ -268,11 +269,16 @@
     paradas = await respParadas.json();
     for (const parada of paradas) paradaPorId[parada.id] = parada;
     try {
-      const [respShapes, respRed] = await Promise.all([fetch("/data/shapes.json"), fetch("/data/red.json")]);
+      const [respShapes, respRed, respDias] = await Promise.all([
+        fetch("/data/shapes.json"),
+        fetch("/data/red.json"),
+        fetch("/data/dias.json"),
+      ]);
       if (respShapes.ok) shapes = await respShapes.json();
       if (respRed.ok) red = await respRed.json();
+      if (respDias.ok) dias = await respDias.json();
     } catch (err) {
-      /* shapes/red opcionales: sin ellos se degradan trazado y ruta */
+      /* shapes/red/dias opcionales: sin ellos se degradan trazado, ruta y filtro por día */
     }
   }
 
@@ -393,7 +399,27 @@
 
   // ---------- Filtro por línea ----------
 
-  function poblarChips() {
+  function tipoDiaLocal(fecha) {
+    const diaSemana = fecha.getDay(); // 0 domingo, 6 sábado
+    if (diaSemana === 0) return "DOM";
+    if (diaSemana === 6) return "SAB";
+    return "LV";
+  }
+
+  async function obtenerTipoDia() {
+    try {
+      const resp = await fetch("/api/dia");
+      if (resp.ok) {
+        const datos = await resp.json();
+        if (datos.tipo_dia) return datos.tipo_dia;
+      }
+    } catch (err) {
+      /* sin servicio se cae al calendario, que no distingue festivos */
+    }
+    return tipoDiaLocal(new Date());
+  }
+
+  function poblarChips(tipoDia) {
     const contenedor = document.getElementById("chips-lineas");
     const todas = document.createElement("button");
     todas.type = "button";
@@ -401,7 +427,11 @@
     todas.textContent = "Todas";
     todas.addEventListener("click", () => seleccionarLinea(""));
     contenedor.appendChild(todas);
-    const codigos = Object.keys(lineas).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+    // Sin datos del día (ausente o lista vacía) se pintan todas: nunca se esconde una línea por un fallo.
+    const activas = dias[tipoDia];
+    const codigos = Object.keys(lineas)
+      .filter((codigo) => !activas || activas.length === 0 || activas.includes(codigo))
+      .sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
     for (const codigo of codigos) {
       const chip = document.createElement("button");
       chip.type = "button";
@@ -879,9 +909,9 @@
     aplicarTema(temaPreferido());
 
     cargarDatos()
-      .then(() => {
-        poblarChips();
+      .then(async () => {
         refrescarMarcadores();
+        poblarChips(await obtenerTipoDia());
       })
       .catch(() => mostrarAviso("No se pudieron cargar los datos del mapa. Recarga la página."));
   }

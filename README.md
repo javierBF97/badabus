@@ -21,9 +21,10 @@ al usar la web se identificaron sus endpoints:
 - `?action=tiempos&parada=<id>` — próximas llegadas a una parada (en vivo).
 - `?action=correspondencias&linea=<id>` — transbordos por parada y tipo de día.
 
-`badabus/bus_data_api.py` reproduce las peticiones GET de `lineas`, `paradas` y
-`tiempos`. `correspondencias` se documenta como hallazgo, pero **no se usa**: los
-transbordos se deducen de las líneas que pasan por cada parada.
+`badabus/bus_data_api.py` reproduce las peticiones GET de `lineas`, `paradas`,
+`tiempos` y `correspondencias`. De `correspondencias` se sacan **qué tipo de día es
+hoy** (laborable, sábado o domingo/festivo) y **qué líneas circulan cada día**; los
+transbordos de una ruta se deducen de las líneas que pasan por cada parada.
 
 Aparte de esa API, la **geometría de los recorridos** (trazados) vive en otro host:
 la web de planos de línea consume `https://tubasa.eu/planos_de_lineas/datos/shape<id>.json`,
@@ -33,17 +34,19 @@ que devuelve la polilínea de una línea como array de puntos (`shape_pt_lat`,
 
 ## Uso
 `badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
-(`paradas.json`, `lineas.json`, `red.json`, `shapes.json`). Para (re)generar los datos:
+(`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
 ```
 python -m badabus.collector
 ```
 
 ## Servidor
 `badabus/server.py` levanta un servidor local (`http.server`, escuchando solo en
-`127.0.0.1`) con dos rutas:
+`127.0.0.1`) con estas rutas:
 
-- `GET /data/<paradas|lineas|red|shapes>.json` — sirve la red generada por el recolector.
+- `GET /data/<paradas|lineas|red|shapes|dias>.json` — sirve la red generada por el recolector.
 - `GET /api/parada/<id>` — próximas llegadas a una parada (dato en vivo).
+- `GET /api/dia` — tipo de día vigente (laborable, sábado o domingo/festivo).
+- `GET /api/plan?origen=<id>&destino=<id>` — ruta entre dos paradas, con transbordos si hacen falta.
 
 Arrancarlo:
 ```

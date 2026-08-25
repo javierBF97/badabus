@@ -94,6 +94,28 @@ class TestFetchCorrespondencias(unittest.TestCase):
         self.assertEqual(api.fetch_correspondencias("X", fetcher=fake), ("", {}))
 
 
+class TestFetchDia(unittest.TestCase):
+    def test_returns_tipo_and_label(self):
+        seen = {}
+        def fake(url, timeout=10):
+            seen["url"] = url
+            return b'{"ok":true,"current_tipo_dia":"LV","etiqueta_dia":"Horario L - V","data":{}}'
+        self.assertEqual(api.fetch_dia("M03_A", fetcher=fake), ("LV", "Horario L - V"))
+        self.assertIn("action=correspondencias", seen["url"])
+        self.assertIn("linea=M03_A", seen["url"])
+
+    def test_raises_when_not_ok(self):
+        def fake(url, timeout=10):
+            return b'{"ok":false}'
+        with self.assertRaises(ValueError):
+            api.fetch_dia("X", fetcher=fake)
+
+    def test_defaults_when_fields_missing(self):
+        def fake(url, timeout=10):
+            return b'{"ok":true}'
+        self.assertEqual(api.fetch_dia("X", fetcher=fake), ("", ""))
+
+
 class TestParseShape(unittest.TestCase):
     def test_groups_by_sentido_in_order(self):
         puntos = [

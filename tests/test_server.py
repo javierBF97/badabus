@@ -18,6 +18,7 @@ class TestServer(unittest.TestCase):
         self._orig_web_dir = server.WEB_DIR
         self._tmp = tempfile.TemporaryDirectory()
         Path(self._tmp.name, "lineas.json").write_text('{"M2": {"color": "#DF3A01"}}', encoding="utf-8")
+        Path(self._tmp.name, "dias.json").write_text('{"LV": ["A"], "SAB": []}', encoding="utf-8")
         Path(self._tmp.name, "index.html").write_text(
             "<!doctype html><html><body>ok</body></html>", encoding="utf-8"
         )
@@ -104,13 +105,16 @@ class TestServer(unittest.TestCase):
 
     def test_plan_ok(self):
         red = {"A": ["1", "2", "3"]}
-        transbordos = {"tipo_dia": "LV", "lineas": {"A": {}}}
-        original = server.planner.cargar_datos
-        server.planner.cargar_datos = lambda *a, **kw: (red, transbordos)
+        dias = {"LV": ["A"]}
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
         try:
             status, body = self.get("/api/plan?origen=1&destino=3")
         finally:
-            server.planner.cargar_datos = original
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body), {"rutas": [[{"linea": "A", "subir": "1", "bajar": "3"}]]})
 
@@ -135,15 +139,64 @@ class TestServer(unittest.TestCase):
         self.assertEqual(status, 502)
 
     def test_plan_malformed_data(self):
-        # transbordos que no es dict (fichero corrupto) -> 502 limpio, no 500 con traza.
-        original = server.planner.cargar_datos
+        # dias que no es dict (fichero corrupto) -> 502 limpio, no 500 con traza.
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
         server.planner.cargar_datos = lambda *a, **kw: ({"A": ["1", "2", "3"]}, [])
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
         try:
             with contextlib.redirect_stdout(io.StringIO()):
                 status, _ = self.get("/api/plan?origen=1&destino=3")
         finally:
-            server.planner.cargar_datos = original
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
         self.assertEqual(status, 502)
+
+    def test_plan_sin_dia_usa_el_calendario(self):
+        # Si el servicio no responde, el planificador sigue dando rutas.
+        red = {"A": ["1", "2", "3"]}
+        dias = {tipo: ["A"] for tipo in ("LV", "SAB", "DOM")}
+        def boom(*a, **kw):
+            raise OSError("caido")
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = boom
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, body = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"rutas": [[{"linea": "A", "subir": "1", "bajar": "3"}]]})
+
+    def test_dia_ok(self):
+        original = server.dia.tipo_dia_actual
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("SAB", "Horario Sábado")
+        try:
+            status, body = self.get("/api/dia")
+        finally:
+            server.dia.tipo_dia_actual = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"tipo_dia": "SAB", "etiqueta": "Horario Sábado"})
+
+    def test_dia_upstream_error(self):
+        def boom(*a, **kw):
+            raise OSError("caido")
+        original = server.dia.tipo_dia_actual
+        server.dia.tipo_dia_actual = boom
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, _ = self.get("/api/dia")
+        finally:
+            server.dia.tipo_dia_actual = original
+        self.assertEqual(status, 502)
+
+    def test_data_dias_allowed(self):
+        status, body = self.get("/data/dias.json")
+        self.assertEqual(status, 200)
+        self.assertIn("LV", json.loads(body))
 
 
 if __name__ == "__main__":

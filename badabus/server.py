@@ -4,14 +4,14 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from badabus import bus_data_api as api
-from badabus import planner
+from badabus import dia, planner
 
 HOST = "127.0.0.1"
 PORT = 8000
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 WEB_DIR = BASE_DIR / "web"
-DATA_FILES = {"paradas.json", "lineas.json", "red.json", "shapes.json", "transbordos.json"}
+DATA_FILES = {"paradas.json", "lineas.json", "red.json", "shapes.json", "dias.json"}
 WEB_FILES = {"index.html", "app.js", "styles.css"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -28,6 +28,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_tiempos(path.removeprefix("/api/parada/"))
         elif path == "/api/plan":
             self.handle_plan()
+        elif path == "/api/dia":
+            self.handle_dia()
         elif path.startswith("/data/"):
             self.handle_static(path.removeprefix("/data/"), DATA_DIR, DATA_FILES)
         elif path == "/":
@@ -71,13 +73,31 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(400, "origen y destino deben ser ids de parada")
             return
         try:
-            red, transbordos = planner.cargar_datos()
-            rutas = planner.planificar(origen, destino, red, transbordos)
+            red, dias = planner.cargar_datos()
+            try:
+                tipo, _ = dia.tipo_dia_actual()
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
+                # Sin servicio se cae al calendario, que no distingue festivos.
+                print(f"  ! no se pudo consultar el tipo de día, uso el calendario: {exc}")
+                tipo = dia.tipo_dia_local()
+            # Ante la duda se ofrece de más: si no hay lista para ese día, se usan todas.
+            activas = dias.get(tipo) or {lin for lins in dias.values() for lin in lins}
+            rutas = planner.planificar(origen, destino, red, activas)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             print(f"  ! error planificando {origen}->{destino}: {exc}")
             self.fail(502, "no se pudo calcular la ruta")
             return
         body = json.dumps({"rutas": rutas}, ensure_ascii=False).encode("utf-8")
+        self.send_bytes(200, body, "application/json; charset=utf-8")
+
+    def handle_dia(self) -> None:
+        try:
+            tipo, etiqueta = dia.tipo_dia_actual()
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
+            print(f"  ! error consultando el tipo de día: {exc}")
+            self.fail(502, "no se pudo consultar el tipo de día")
+            return
+        body = json.dumps({"tipo_dia": tipo, "etiqueta": etiqueta}, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
 
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:

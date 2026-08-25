@@ -108,33 +108,27 @@ class TestCollect(unittest.TestCase):
         self.assertIn("2", shapes)
         self.assertNotIn("M2", shapes)
 
-    def test_normalizar_linea(self):
-        self.assertEqual(collector.normalizar_linea("L11"), "11")
-        self.assertEqual(collector.normalizar_linea(" L13 "), "13")
-        self.assertEqual(collector.normalizar_linea("LBGM1"), "BG1")
-        self.assertEqual(collector.normalizar_linea("BGM2"), "BG2")
-        self.assertEqual(collector.normalizar_linea("5"), "5")
-
-    def test_recolectar_transbordos(self):
-        # M2 circula hoy (LV trae dict); la línea 2 no circula (LV trae lista vacía).
+    def test_recolectar_dias(self):
+        # M2 circula LV pero no SAB; la línea 2 solo circula SAB.
         def fake_corr(url, timeout=10):
             if "action=lineas" in url:
                 return LINEAS
             if "action=correspondencias" in url and "linea=TRIP_100007" in url:
                 return (
                     b'{"ok":true,"current_tipo_dia":"LV","data":'
-                    b'{"LV":{"202":"L11,LBGM1","207":"L4"},"SAB":[]}}'
+                    b'{"LV":{"202":"L11"},"SAB":[],"DOM":[]}}'
                 )
             if "action=correspondencias" in url and "linea=002_A" in url:
-                return b'{"ok":true,"current_tipo_dia":"LV","data":{"LV":[]}}'
+                return (
+                    b'{"ok":true,"current_tipo_dia":"LV","data":'
+                    b'{"LV":[],"SAB":{"202":""},"DOM":[]}}'
+                )
             raise AssertionError("url inesperada: " + url)
 
-        out = collector.recolectar_transbordos(fetcher=fake_corr)
-        self.assertEqual(out["tipo_dia"], "LV")
-        self.assertEqual(sorted(out["lineas"]), ["M2"])
-        self.assertEqual(out["lineas"]["M2"], {"202": ["11", "BG1"], "207": ["4"]})
+        out = collector.recolectar_dias(fetcher=fake_corr)
+        self.assertEqual(out, {"LV": ["M2"], "SAB": ["2"], "DOM": []})
 
-    def test_recolectar_transbordos_error_no_aborta(self):
+    def test_recolectar_dias_error_no_aborta(self):
         def fake_corr(url, timeout=10):
             if "action=lineas" in url:
                 return LINEAS
@@ -143,8 +137,8 @@ class TestCollect(unittest.TestCase):
             raise OSError("caido")
 
         with contextlib.redirect_stdout(io.StringIO()):
-            out = collector.recolectar_transbordos(fetcher=fake_corr)
-        self.assertEqual(sorted(out["lineas"]), ["M2"])
+            out = collector.recolectar_dias(fetcher=fake_corr)
+        self.assertEqual(out, {"LV": ["M2"]})
 
     def test_save_json_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
