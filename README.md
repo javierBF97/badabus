@@ -32,6 +32,13 @@ que devuelve la polilínea de una línea como array de puntos (`shape_pt_lat`,
 `shape_pt_lon`, `sentido`). `badabus/bus_data_api.py` (`fetch_shape`) la baja y
 `parse_shape` la agrupa por sentido para poder dibujar el trazado en el mapa.
 
+La duración de un trayecto se estima a partir de una velocidad medida de los propios
+datos: cada llegada de `tiempos` trae los metros que le faltan al bus y los minutos que
+tardará, así que `metros/minutos` da su velocidad comercial. Una muestra de decenas de
+buses dio una mediana de ~20 km/h, que es la que usa el planificador para ordenar las
+rutas, corregida por un factor de sinuosidad al pasar de la distancia en línea recta al
+recorrido real.
+
 ## Uso
 `badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
 (`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
@@ -46,7 +53,8 @@ python -m badabus.collector
 - `GET /data/<paradas|lineas|red|shapes|dias>.json` — sirve la red generada por el recolector.
 - `GET /api/parada/<id>` — próximas llegadas a una parada (dato en vivo).
 - `GET /api/dia` — tipo de día vigente (laborable, sábado o domingo/festivo).
-- `GET /api/plan?origen=<id>&destino=<id>` — ruta entre dos paradas, con transbordos si hacen falta.
+- `GET /api/plan?origen=<id>&destino=<id>` — rutas entre dos paradas, con transbordos si hacen
+  falta, ordenadas por tiempo estimado y con la espera del próximo bus.
 
 Arrancarlo:
 ```
