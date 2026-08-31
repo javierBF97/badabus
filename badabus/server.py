@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from badabus import bus_data_api as api
-from badabus import dia, planner
+from badabus import dia, planner, ranking
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -77,16 +77,33 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 tipo, _ = dia.tipo_dia_actual()
             except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
-                # Sin servicio se cae al calendario, que no distingue festivos.
                 print(f"  ! no se pudo consultar el tipo de día, uso el calendario: {exc}")
                 tipo = dia.tipo_dia_local()
-            # Ante la duda se ofrece de más: si no hay lista para ese día, se usan todas.
             activas = dias.get(tipo) or {lin for lins in dias.values() for lin in lins}
             rutas = planner.planificar(origen, destino, red, activas)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             print(f"  ! error planificando {origen}->{destino}: {exc}")
             self.fail(502, "no se pudo calcular la ruta")
             return
+        # Enriquecido best-effort: si falla el dato en vivo o las coordenadas, se devuelve igual.
+        try:
+            tiempos = api.parse_tiempos(api.fetch_json("tiempos", parada=origen))
+            esperas = ranking.esperas_por_linea(tiempos)
+        except (OSError, ValueError, KeyError, TypeError):
+            esperas = {}
+        try:
+            paradas = ranking.cargar_paradas()
+        except (OSError, ValueError):
+            paradas = {}
+        try:
+            rutas = ranking.puntuar(rutas, red, paradas, esperas)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
+            # Un fallo puntuando no debe esconder rutas: se devuelven sin estimar.
+            print(f"  ! error puntuando las rutas: {exc}")
+            rutas = [
+                {"tramos": ruta, "viaje_min": None, "espera_min": None}
+                for ruta in rutas[:ranking.LIMITE_RUTAS]
+            ]
         body = json.dumps({"rutas": rutas}, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
 

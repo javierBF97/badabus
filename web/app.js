@@ -703,6 +703,13 @@
     }
   }
 
+  function textoMinutos(ruta) {
+    if (ruta.viaje_min == null) return "";
+    const primera = ruta.tramos[0].linea;
+    const espera = ruta.espera_min == null ? "" : ` · próximo ${escaparHtml(primera)} en ${ruta.espera_min} min`;
+    return ` <span class="cl-ruta-min">· ~${ruta.viaje_min} min${espera}</span>`;
+  }
+
   function renderRutas(rutas) {
     const cont = document.getElementById("cl-resultados");
     if (!rutas.length) {
@@ -715,24 +722,26 @@
     }
     cont.innerHTML = "";
     rutas.forEach((ruta, idx) => {
+      const tramos = ruta.tramos;
       const div = document.createElement("div");
       div.className = "cl-ruta" + (idx === 0 ? " activa" : "");
-      const nt = ruta.length - 1;
-      const partes = [`<div class="cl-ruta-cab">${nt === 0 ? "Directo" : nt + (nt > 1 ? " transbordos" : " transbordo")}</div>`];
-      ruta.forEach((tramo, i) => {
+      const nt = tramos.length - 1;
+      const cabecera = nt === 0 ? "Directo" : nt + (nt > 1 ? " transbordos" : " transbordo");
+      const partes = [`<div class="cl-ruta-cab">${cabecera}${textoMinutos(ruta)}</div>`];
+      tramos.forEach((tramo, i) => {
         const color = colorLinea(tramo.linea);
         partes.push(`<div class="cl-tramo"><span class="chip-linea" style="background:${color};color:${textoSobre(color)}">${escaparHtml(tramo.linea)}</span><span class="cl-tramo-txt">${escaparHtml(nombreParada(tramo.subir))} → ${escaparHtml(nombreParada(tramo.bajar))}</span></div>`);
-        if (i < ruta.length - 1) partes.push(`<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`);
+        if (i < tramos.length - 1) partes.push(`<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`);
       });
       div.innerHTML = partes.join("");
       div.addEventListener("click", () => {
         cont.querySelectorAll(".cl-ruta").forEach((r) => r.classList.remove("activa"));
         div.classList.add("activa");
-        dibujarRuta(ruta);
+        dibujarRuta(tramos);
       });
       cont.appendChild(div);
     });
-    dibujarRuta(rutas[0]);
+    dibujarRuta(rutas[0].tramos);
   }
 
   function dibujarRuta(ruta) {

@@ -14,6 +14,7 @@ from badabus import bus_data_api, server
 class TestServer(unittest.TestCase):
     def setUp(self):
         self._orig_fetch_json = bus_data_api.fetch_json
+        self._orig_cargar_paradas = server.ranking.cargar_paradas
         self._orig_data_dir = server.DATA_DIR
         self._orig_web_dir = server.WEB_DIR
         self._tmp = tempfile.TemporaryDirectory()
@@ -26,12 +27,16 @@ class TestServer(unittest.TestCase):
         Path(self._tmp.name, "styles.css").write_text("/* css */", encoding="utf-8")
         server.DATA_DIR = Path(self._tmp.name)
         server.WEB_DIR = Path(self._tmp.name)
+        # Stubea por defecto para que ningún test toque la red ni el disco
+        bus_data_api.fetch_json = lambda action, **kw: []
+        server.ranking.cargar_paradas = lambda *a, **kw: {}
         self.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
 
     def tearDown(self):
+        server.ranking.cargar_paradas = self._orig_cargar_paradas
         self.httpd.shutdown()
         self.httpd.server_close()
         bus_data_api.fetch_json = self._orig_fetch_json
@@ -106,17 +111,78 @@ class TestServer(unittest.TestCase):
     def test_plan_ok(self):
         red = {"A": ["1", "2", "3"]}
         dias = {"LV": ["A"]}
+        paradas = {"1": (38.88, -6.97), "2": (38.88, -6.96), "3": (38.88, -6.95)}
         orig_datos = server.planner.cargar_datos
         orig_dia = server.dia.tipo_dia_actual
+        orig_fetch = bus_data_api.fetch_json
+        orig_paradas = server.ranking.cargar_paradas
         server.planner.cargar_datos = lambda *a, **kw: (red, dias)
         server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = lambda *a, **kw: paradas
+        bus_data_api.fetch_json = lambda action, **kw: [
+            {"linea": "LÍNEA A", "distancia": "1000m", "tiempo": "5 Minutos."}
+        ]
         try:
             status, body = self.get("/api/plan?origen=1&destino=3")
         finally:
             server.planner.cargar_datos = orig_datos
             server.dia.tipo_dia_actual = orig_dia
+            bus_data_api.fetch_json = orig_fetch
+            server.ranking.cargar_paradas = orig_paradas
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body), {"rutas": [[{"linea": "A", "subir": "1", "bajar": "3"}]]})
+        rutas = json.loads(body)["rutas"]
+        self.assertEqual(len(rutas), 1)
+        self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
+        self.assertIsInstance(rutas[0]["viaje_min"], int)
+        self.assertEqual(rutas[0]["espera_min"], 5)
+
+    def test_plan_sin_tiempos_espera_es_none(self):
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        paradas = {"1": (38.88, -6.97), "2": (38.88, -6.96), "3": (38.88, -6.95)}
+        def boom(*a, **kw):
+            raise OSError("sin tiempos")
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_fetch = bus_data_api.fetch_json
+        orig_paradas = server.ranking.cargar_paradas
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = lambda *a, **kw: paradas
+        bus_data_api.fetch_json = boom
+        try:
+            status, body = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            bus_data_api.fetch_json = orig_fetch
+            server.ranking.cargar_paradas = orig_paradas
+        self.assertEqual(status, 200)
+        rutas = json.loads(body)["rutas"]
+        self.assertIsNone(rutas[0]["espera_min"])
+        self.assertIsInstance(rutas[0]["viaje_min"], int)
+
+    def test_plan_sin_paradas_viaje_es_none(self):
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_fetch = bus_data_api.fetch_json
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        bus_data_api.fetch_json = lambda action, **kw: []
+        # cargar_paradas ya devuelve {} por el setUp
+        try:
+            status, body = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            bus_data_api.fetch_json = orig_fetch
+        self.assertEqual(status, 200)
+        rutas = json.loads(body)["rutas"]
+        self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
+        self.assertIsNone(rutas[0]["viaje_min"])
+        self.assertIsNone(rutas[0]["espera_min"])
 
     def test_plan_invalid_ids(self):
         status, _ = self.get("/api/plan?origen=abc&destino=3")
@@ -169,7 +235,34 @@ class TestServer(unittest.TestCase):
             server.planner.cargar_datos = orig_datos
             server.dia.tipo_dia_actual = orig_dia
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body), {"rutas": [[{"linea": "A", "subir": "1", "bajar": "3"}]]})
+        self.assertEqual(
+            json.loads(body)["rutas"],
+            [{"tramos": [{"linea": "A", "subir": "1", "bajar": "3"}], "viaje_min": None, "espera_min": None}],
+        )
+
+    def test_plan_error_puntuando_devuelve_rutas_sin_estimar(self):
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        def boom(*a, **kw):
+            raise ValueError("ranking roto")
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_puntuar = server.ranking.puntuar
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.puntuar = boom
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, body = self.get("/api/plan?origen=1&destino=3")
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            server.ranking.puntuar = orig_puntuar
+        self.assertEqual(status, 200)
+        rutas = json.loads(body)["rutas"]
+        self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
+        self.assertIsNone(rutas[0]["viaje_min"])
+        self.assertIsNone(rutas[0]["espera_min"])
 
     def test_dia_ok(self):
         original = server.dia.tipo_dia_actual
