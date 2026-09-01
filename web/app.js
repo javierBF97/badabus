@@ -820,10 +820,15 @@
   }
 
   function textoMinutos(ruta) {
-    if (ruta.viaje_min == null) return "";
-    const primera = ruta.tramos[0].linea;
-    const espera = ruta.espera_min == null ? "" : ` · próximo ${escaparHtml(primera)} en ${ruta.espera_min} min`;
-    return ` <span class="cl-ruta-min">· ~${ruta.viaje_min} min${espera}</span>`;
+    // El total lo calcula el servidor: aquí solo se pinta, para que no haya dos
+    // fórmulas que puedan desincronizarse.
+    if (ruta.total_min == null) return "";
+    const partes = [`~${ruta.total_min} min`];
+    if (ruta.andando_min != null) partes.push(`${ruta.andando_min} min andando`);
+    if (ruta.espera_min != null) {
+      partes.push(`próximo ${escaparHtml(ruta.tramos[0].linea)} en ${ruta.espera_min} min`);
+    }
+    return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>`;
   }
 
   function renderRutas(rutas) {
