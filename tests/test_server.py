@@ -220,10 +220,55 @@ class TestServer(unittest.TestCase):
             server.ranking.cargar_paradas = orig_paradas
         self.assertEqual(status, 200)
         rutas = json.loads(body)["rutas"]
-        self.assertEqual(len(rutas), 1)
         self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
-        self.assertIsInstance(rutas[0]["viaje_min"], int)
         self.assertEqual(rutas[0]["espera_min"], 5)
+        self.assertIsNone(rutas[0]["andando_min"])
+
+    def test_plan_con_coordenadas_de_origen(self):
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        paradas = {"1": (38.88, -6.97), "2": (38.88, -6.96), "3": (38.88, -6.95)}
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_paradas = server.ranking.cargar_paradas
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = lambda *a, **kw: paradas
+        try:
+            status, body = self.get("/api/plan?origen_lat=38.8801&origen_lon=-6.9701&destino=3")
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            server.ranking.cargar_paradas = orig_paradas
+        self.assertEqual(status, 200)
+        rutas = json.loads(body)["rutas"]
+        self.assertTrue(rutas, "debería encontrar ruta desde una parada cercana")
+        self.assertIsInstance(rutas[0]["andando_min"], int)
+
+    def test_plan_con_direccion_fuera_de_la_red(self):
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        paradas = {"1": (38.88, -6.97), "2": (38.88, -6.96), "3": (38.88, -6.95)}
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_paradas = server.ranking.cargar_paradas
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = lambda *a, **kw: paradas
+        try:
+            status, body = self.get("/api/plan?origen_lat=40.0&origen_lon=-3.0&destino=3")
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            server.ranking.cargar_paradas = orig_paradas
+        self.assertEqual(status, 200)
+        datos = json.loads(body)
+        self.assertEqual(datos["rutas"], [])
+        self.assertEqual(datos["aviso"], "fuera de la red")
+
+    def test_plan_con_coordenadas_invalidas(self):
+        status, _ = self.get("/api/plan?origen_lat=abc&origen_lon=-6.97&destino=3")
+        self.assertEqual(status, 400)
 
     def test_plan_sin_tiempos_espera_es_none(self):
         red = {"A": ["1", "2", "3"]}
@@ -324,10 +369,13 @@ class TestServer(unittest.TestCase):
             server.planner.cargar_datos = orig_datos
             server.dia.tipo_dia_actual = orig_dia
         self.assertEqual(status, 200)
-        self.assertEqual(
-            json.loads(body)["rutas"],
-            [{"tramos": [{"linea": "A", "subir": "1", "bajar": "3"}], "viaje_min": None, "espera_min": None}],
-        )
+        rutas = json.loads(body)["rutas"]
+        self.assertEqual(len(rutas), 1)
+        self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
+        self.assertIsNone(rutas[0]["viaje_min"])
+        self.assertIsNone(rutas[0]["espera_min"])
+        self.assertIsNone(rutas[0].get("total_min"))
+        self.assertIsNone(rutas[0].get("andando_min"))
 
     def test_plan_error_puntuando_devuelve_rutas_sin_estimar(self):
         red = {"A": ["1", "2", "3"]}

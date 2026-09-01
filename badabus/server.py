@@ -74,42 +74,80 @@ class Handler(BaseHTTPRequestHandler):
     def handle_plan(self) -> None:
         query = self.path.split("?", 1)[1] if "?" in self.path else ""
         params = parse_qs(query)
-        origen = (params.get("origen") or [""])[0]
-        destino = (params.get("destino") or [""])[0]
-        if not origen.isdigit() or not destino.isdigit():
-            self.fail(400, "origen y destino deben ser ids de parada")
-            return
-        try:
-            red, dias = planner.cargar_datos()
-            try:
-                tipo, _ = dia.tipo_dia_actual()
-            except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
-                print(f"  ! no se pudo consultar el tipo de día, uso el calendario: {exc}")
-                tipo = dia.tipo_dia_local()
-            activas = dias.get(tipo) or {lin for lins in dias.values() for lin in lins}
-            rutas = planner.planificar(origen, destino, red, activas)
-        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            print(f"  ! error planificando {origen}->{destino}: {exc}")
-            self.fail(502, "no se pudo calcular la ruta")
-            return
-        # Enriquecido best-effort: si falla el dato en vivo o las coordenadas, se devuelve igual.
-        try:
-            tiempos = api.parse_tiempos(api.fetch_json("tiempos", parada=origen))
-            esperas = ranking.esperas_por_linea(tiempos)
-        except (OSError, ValueError, KeyError, TypeError):
-            esperas = {}
         try:
             paradas = ranking.cargar_paradas()
         except (OSError, ValueError):
             paradas = {}
         try:
-            rutas = ranking.puntuar(rutas, red, paradas, esperas)
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as exc:
-            # Un fallo puntuando no debe esconder rutas: se devuelven sin estimar.
+            origen_ids, andando_origen = resolver_extremo(params, "origen", paradas)
+            destino_ids, andando_destino = resolver_extremo(params, "destino", paradas)
+        except ValueError as exc:
+            self.fail(400, str(exc))
+            return
+        if not origen_ids or not destino_ids:
+            # Sin coordenadas cargadas no es que la dirección esté lejos: es que faltan
+            # los datos. Decir "fuera de la red" culparía al usuario de un fallo nuestro.
+            aviso = "fuera de la red" if paradas else "sin datos de paradas"
+            body = json.dumps(
+                {"rutas": [], "aviso": aviso}, ensure_ascii=False
+            )
+            self.send_bytes(
+                200, body.encode("utf-8"), "application/json; charset=utf-8"
+            )
+            return
+        try:
+            red, dias = planner.cargar_datos()
+            try:
+                tipo, _ = dia.tipo_dia_actual()
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                AttributeError,
+                IndexError,
+            ) as exc:
+                print(f"  ! no se pudo consultar el tipo de día, uso el calendario: {exc}")
+                tipo = dia.tipo_dia_local()
+            activas = dias.get(tipo) or {lin for lins in dias.values() for lin in lins}
+            rutas = []
+            for origen in origen_ids:
+                for destino in destino_ids:
+                    rutas.extend(planner.planificar(origen, destino, red, activas))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            print(f"  ! error planificando {origen_ids}->{destino_ids}: {exc}")
+            self.fail(502, "no se pudo calcular la ruta")
+            return
+        # Enriquecido best-effort: si falla el dato en vivo, se devuelve igual.
+        esperas = {}
+        for origen in origen_ids:
+            try:
+                tiempos = api.parse_tiempos(api.fetch_json("tiempos", parada=origen))
+                esperas[origen] = ranking.esperas_por_linea(tiempos)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        try:
+            rutas = ranking.puntuar(
+                rutas, red, paradas, esperas, andando_origen, andando_destino
+            )
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            IndexError,
+        ) as exc:
             print(f"  ! error puntuando las rutas: {exc}")
             rutas = [
-                {"tramos": ruta, "viaje_min": None, "espera_min": None}
-                for ruta in rutas[:ranking.LIMITE_RUTAS]
+                {
+                    "tramos": ruta,
+                    "total_min": None,
+                    "viaje_min": None,
+                    "espera_min": None,
+                    "andando_min": None,
+                }
+                for ruta in rutas[: ranking.LIMITE_RUTAS]
             ]
         body = json.dumps({"rutas": rutas}, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
@@ -184,6 +222,27 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:
         pass
+
+
+def resolver_extremo(
+    params: dict, prefijo: str, paradas: dict
+) -> tuple[list[str], dict[str, float]]:
+    """De los parámetros de un extremo a (paradas candidatas, {id: km andando}).
+
+    Acepta `<prefijo>=<id>` o `<prefijo>_lat` + `<prefijo>_lon`. Con un id no hay
+    caminata que contar. Lanza ValueError si los parámetros no valen.
+    """
+    ident = (params.get(prefijo) or [""])[0]
+    if ident:
+        if not ident.isdigit():
+            raise ValueError(f"{prefijo} debe ser un id de parada")
+        return [ident], {}
+    lat = (params.get(f"{prefijo}_lat") or [""])[0]
+    lon = (params.get(f"{prefijo}_lon") or [""])[0]
+    if not lat or not lon:
+        raise ValueError(f"falta {prefijo}")
+    cercanas = ranking.paradas_cercanas(float(lat), float(lon), paradas)
+    return [p for p, _ in cercanas], {p: km for p, km in cercanas}
 
 
 def leer_env(ruta: Path = ENV_FILE) -> dict[str, str]:
