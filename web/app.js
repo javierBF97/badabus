@@ -653,7 +653,7 @@
     }
     cont.innerHTML = `
       <div class="cl-buscar-campo">
-        <input type="text" class="cl-input" placeholder="Buscar parada…" aria-label="Buscar parada de ${campo}" autocomplete="off">
+        <input type="text" class="cl-input" placeholder="Parada o dirección…" aria-label="Buscar parada o dirección de ${campo}" autocomplete="off">
         <div class="cl-resultados-busq" hidden></div>
       </div>
       <div class="cl-modos">
@@ -668,25 +668,77 @@
     cont.querySelector('[data-modo="cercana"]').addEventListener("click", () => elegirCercana(campo));
   }
 
-  function renderBusquedaCL(cont, campo, texto) {
-    cont.innerHTML = "";
-    const lista = buscarParadas(texto);
-    if (!lista.length) {
-      cont.hidden = true;
+  let temporizadorBusqueda = null;
+
+  // Nominatim limita a una petición por segundo: se espera a que el usuario pare de
+  // escribir y no se consulta con menos de 4 caracteres. Además se comprueba que el
+  // texto siga siendo el mismo al volver, porque una respuesta lenta de una consulta
+  // anterior podría pisar los resultados de la actual.
+  function buscarDirecciones(texto, sigueVigente, alTener) {
+    clearTimeout(temporizadorBusqueda);
+    if (texto.trim().length < 4) {
+      alTener([]);
       return;
     }
-    for (const parada of lista) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "resultado-item";
-      item.textContent = parada.nombre;
-      item.addEventListener("mousedown", (evento) => {
-        evento.preventDefault();
-        fijarParada(campo, parada.id);
-      });
-      cont.appendChild(item);
-    }
-    cont.hidden = false;
+    temporizadorBusqueda = setTimeout(async () => {
+      let encontradas = [];
+      try {
+        const resp = await fetch(`/api/buscar?q=${encodeURIComponent(texto)}`);
+        if (resp.ok) encontradas = await resp.json();
+      } catch (err) {
+        /* sin direcciones: las paradas siguen saliendo */
+      }
+      if (sigueVigente()) alTener(encontradas);
+    }, 600);
+  }
+
+  function renderBusquedaCL(cont, campo, texto) {
+    const paradasEncontradas = buscarParadas(texto);
+    const pintar = (direcciones) => {
+      cont.innerHTML = "";
+      if (!paradasEncontradas.length && !direcciones.length) {
+        cont.hidden = true;
+        return;
+      }
+      if (paradasEncontradas.length) {
+        cont.appendChild(cabeceraGrupo("Paradas"));
+        for (const parada of paradasEncontradas) {
+          cont.appendChild(itemResultado(`● ${parada.nombre}`, () => fijarParada(campo, parada.id)));
+        }
+      }
+      if (direcciones.length) {
+        cont.appendChild(cabeceraGrupo("Direcciones"));
+        for (const sitio of direcciones) {
+          cont.appendChild(
+            itemResultado(`⌂ ${sitio.nombre}`, () => fijarPunto(campo, sitio.lat, sitio.lon, sitio.nombre))
+          );
+        }
+      }
+      cont.hidden = false;
+    };
+    pintar([]);
+    // El input puede haber cambiado cuando llegue la respuesta: solo se pinta si sigue igual.
+    const inputActual = cont.parentElement.querySelector(".cl-input");
+    buscarDirecciones(texto, () => inputActual && inputActual.value === texto, pintar);
+  }
+
+  function cabeceraGrupo(titulo) {
+    const div = document.createElement("div");
+    div.className = "cl-grupo";
+    div.textContent = titulo;
+    return div;
+  }
+
+  function itemResultado(texto, alElegir) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "resultado-item";
+    item.textContent = texto;
+    item.addEventListener("mousedown", (evento) => {
+      evento.preventDefault();
+      alElegir();
+    });
+    return item;
   }
 
   function activarModoMapa(campo) {
