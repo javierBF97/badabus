@@ -668,19 +668,19 @@
     cont.querySelector('[data-modo="cercana"]').addEventListener("click", () => elegirCercana(campo));
   }
 
-  let temporizadorBusqueda = null;
+  const temporizadoresBusqueda = {};
 
   // Nominatim limita a una petición por segundo: se espera a que el usuario pare de
   // escribir y no se consulta con menos de 4 caracteres. Además se comprueba que el
   // texto siga siendo el mismo al volver, porque una respuesta lenta de una consulta
   // anterior podría pisar los resultados de la actual.
-  function buscarDirecciones(texto, sigueVigente, alTener) {
-    clearTimeout(temporizadorBusqueda);
+  function buscarDirecciones(campo, texto, sigueVigente, alTener) {
+    clearTimeout(temporizadoresBusqueda[campo]);
     if (texto.trim().length < 4) {
       alTener([]);
       return;
     }
-    temporizadorBusqueda = setTimeout(async () => {
+    temporizadoresBusqueda[campo] = setTimeout(async () => {
       let encontradas = [];
       try {
         const resp = await fetch(`/api/buscar?q=${encodeURIComponent(texto)}`);
@@ -719,7 +719,7 @@
     pintar([]);
     // El input puede haber cambiado cuando llegue la respuesta: solo se pinta si sigue igual.
     const inputActual = cont.parentElement.querySelector(".cl-input");
-    buscarDirecciones(texto, () => inputActual && inputActual.value === texto, pintar);
+    buscarDirecciones(campo, texto, () => inputActual && inputActual.value === texto, pintar);
   }
 
   function cabeceraGrupo(titulo) {
