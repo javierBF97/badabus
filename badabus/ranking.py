@@ -10,6 +10,11 @@ FACTOR_SINUOSIDAD = 1.3        # la ruta real serpentea ~30% más que la recta
 FACTOR_INFUMABLE = 1.5         # se descarta lo que pase de 1.5x la mejor
 LIMITE_RUTAS = 4               # máximo de alternativas devueltas
 
+VELOCIDAD_ANDANDO_KMH = 4.5    # paso normal
+FACTOR_CALLEJEO = 1.3          # andando tampoco se va en línea recta
+RADIO_PARADAS_KM = 1.0         # tope de cordura al buscar paradas cercanas
+MAX_PARADAS_CERCANAS = 4
+
 RADIO_TIERRA_KM = 6371.0
 
 
@@ -45,6 +50,31 @@ def minutos_viaje(ruta: list[dict], red: dict, paradas: dict) -> float:
         for a, b in zip(coords, coords[1:], strict=False):
             km += distancia_km(a, b)
     return km * FACTOR_SINUOSIDAD / VELOCIDAD_COMERCIAL_KMH * 60
+
+
+def minutos_andando(km: float) -> float:
+    """Minutos a pie de una distancia recta, corregida porque no se
+    atraviesan edificios.
+    """
+    return km * FACTOR_CALLEJEO / VELOCIDAD_ANDANDO_KMH * 60
+
+
+def paradas_cercanas(
+    lat: float, lon: float, paradas: dict
+) -> list[tuple[str, float]]:
+    """Las paradas más próximas a un punto, como [(id, km)], de más cerca a
+    más lejos.
+
+    Se descartan las que pasen de RADIO_PARADAS_KM y se devuelven como mucho
+    MAX_PARADAS_CERCANAS.
+    """
+    cerca = []
+    for parada, coords in paradas.items():
+        km = distancia_km((lat, lon), coords)
+        if km <= RADIO_PARADAS_KM:
+            cerca.append((parada, km))
+    cerca.sort(key=lambda p: p[1])
+    return cerca[:MAX_PARADAS_CERCANAS]
 
 
 _ALIAS_LINEA = {"BGM1": "BG1", "BGM2": "BG2"}

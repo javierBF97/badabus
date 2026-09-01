@@ -208,5 +208,41 @@ class TestCargarParadas(unittest.TestCase):
         self.assertEqual(paradas, {"1": (38.88, -6.97)})
 
 
+class TestMinutosAndando(unittest.TestCase):
+    def test_aplica_callejeo_y_velocidad(self):
+        esperado = 1.0 * ranking.FACTOR_CALLEJEO / ranking.VELOCIDAD_ANDANDO_KMH * 60
+        self.assertAlmostEqual(ranking.minutos_andando(1.0), esperado, places=6)
+
+    def test_cero_es_cero(self):
+        self.assertEqual(ranking.minutos_andando(0.0), 0.0)
+
+
+class TestParadasCercanas(unittest.TestCase):
+    PARADAS = {
+        "cerca": (38.8800, -6.9700),
+        "media": (38.8810, -6.9700),
+        "lejos": (38.8850, -6.9700),
+        "fuera": (38.9500, -6.9700),
+    }
+
+    def test_ordena_por_distancia_y_devuelve_km(self):
+        salida = ranking.paradas_cercanas(38.8800, -6.9700, self.PARADAS)
+        self.assertEqual([i for i, _ in salida][:3], ["cerca", "media", "lejos"])
+        self.assertAlmostEqual(salida[0][1], 0.0, places=6)
+
+    def test_descarta_las_de_fuera_del_radio(self):
+        salida = ranking.paradas_cercanas(38.8800, -6.9700, self.PARADAS)
+        self.assertNotIn("fuera", [i for i, _ in salida])
+
+    def test_respeta_el_maximo(self):
+        muchas = {str(n): (38.8800 + n / 10000, -6.9700) for n in range(20)}
+        salida = ranking.paradas_cercanas(38.8800, -6.9700, muchas)
+        self.assertEqual(len(salida), ranking.MAX_PARADAS_CERCANAS)
+
+    def test_sin_paradas_cerca_devuelve_vacio(self):
+        salida = ranking.paradas_cercanas(0.0, 0.0, self.PARADAS)
+        self.assertEqual(salida, [])
+
+
 if __name__ == "__main__":
     unittest.main()
