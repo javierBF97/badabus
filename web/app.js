@@ -18,6 +18,7 @@
   let lineas = {};
   let paradas = [];
   let shapes = {};
+  let claveMapa = "";
   let map;
   let capaTiles;
   let capaTrazado;
@@ -47,6 +48,21 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
   }
 
+  async function cargarClaveMapa() {
+    // Sin clave el mapa se ve con marca de agua, pero la app funciona igual.
+    try {
+      const resp = await fetch("/api/config");
+      if (resp.ok) claveMapa = (await resp.json()).carto_key || "";
+    } catch (err) {
+      /* sin ajustes: se usa el mapa sin clave */
+    }
+  }
+
+  function urlTiles(tema) {
+    const base = CAPAS_TILES[tema].url;
+    return claveMapa ? `${base}?key=${encodeURIComponent(claveMapa)}` : base;
+  }
+
   function aplicarTema(tema) {
     document.documentElement.dataset.theme = tema;
     const toggle = document.getElementById("theme-toggle");
@@ -56,7 +72,7 @@
     }
     if (map) {
       if (capaTiles) map.removeLayer(capaTiles);
-      capaTiles = L.tileLayer(CAPAS_TILES[tema].url, { attribution: ATRIBUCION, maxZoom: 19 }).addTo(map);
+      capaTiles = L.tileLayer(urlTiles(tema), { attribution: ATRIBUCION, maxZoom: 19 }).addTo(map);
     }
   }
 
@@ -914,10 +930,13 @@
       }
     });
 
-    crearMapa();
-    aplicarTema(temaPreferido());
-
-    cargarDatos()
+    // La clave va primero: el mapa se crea con ella para no recargar los tiles después.
+    cargarClaveMapa()
+      .then(() => {
+        crearMapa();
+        aplicarTema(temaPreferido());
+        return cargarDatos();
+      })
       .then(async () => {
         refrescarMarcadores();
         poblarChips(await obtenerTipoDia());

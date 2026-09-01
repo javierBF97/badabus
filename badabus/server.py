@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 WEB_DIR = BASE_DIR / "web"
 DATA_FILES = {"paradas.json", "lineas.json", "red.json", "shapes.json", "dias.json"}
+ENV_FILE = BASE_DIR / ".env"
 WEB_FILES = {"index.html", "app.js", "styles.css"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -30,6 +31,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_plan()
         elif path == "/api/dia":
             self.handle_dia()
+        elif path == "/api/config":
+            self.handle_config()
         elif path.startswith("/data/"):
             self.handle_static(path.removeprefix("/data/"), DATA_DIR, DATA_FILES)
         elif path == "/":
@@ -117,6 +120,13 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps({"tipo_dia": tipo, "etiqueta": etiqueta}, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
 
+    def handle_config(self) -> None:
+        """Ajustes que el navegador necesita y no viven en el código, como la clave del mapa."""
+        # Se pasa el fichero explícitamente: por defecto quedaría fijado al importar.
+        clave = leer_env(ENV_FILE).get("CARTO_API_KEY", "")
+        body = json.dumps({"carto_key": clave}, ensure_ascii=False).encode("utf-8")
+        self.send_bytes(200, body, "application/json; charset=utf-8")
+
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -135,6 +145,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:
         pass
+
+
+def leer_env(ruta: Path = ENV_FILE) -> dict[str, str]:
+    """Lee un .env sencillo (CLAVE=valor por línea). Si no existe, devuelve {}."""
+    valores: dict[str, str] = {}
+    try:
+        texto = ruta.read_text(encoding="utf-8")
+    except OSError:
+        return valores
+    for linea in texto.splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        clave, _, valor = linea.partition("=")
+        valores[clave.strip()] = valor.strip().strip('"').strip("'")
+    return valores
 
 
 def main() -> None:

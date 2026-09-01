@@ -108,6 +108,33 @@ class TestServer(unittest.TestCase):
         status, _ = self.get("/data/app.js")
         self.assertEqual(status, 404)
 
+    def test_config_sin_env_devuelve_clave_vacia(self):
+        original = server.ENV_FILE
+        server.ENV_FILE = Path(self._tmp.name, "no-existe.env")
+        try:
+            status, body = self.get("/api/config")
+        finally:
+            server.ENV_FILE = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"carto_key": ""})
+
+    def test_config_lee_la_clave_del_env(self):
+        env = Path(self._tmp.name, ".env")
+        env.write_text("# comentario\nCARTO_API_KEY=abc123\n", encoding="utf-8")
+        original = server.ENV_FILE
+        server.ENV_FILE = env
+        try:
+            status, body = self.get("/api/config")
+        finally:
+            server.ENV_FILE = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"carto_key": "abc123"})
+
+    def test_leer_env_ignora_comentarios_lineas_sueltas_y_comillas(self):
+        env = Path(self._tmp.name, "otro.env")
+        env.write_text('# nota\n\nCARTO_API_KEY="con comillas"\nSUELTA\n', encoding="utf-8")
+        self.assertEqual(server.leer_env(env), {"CARTO_API_KEY": "con comillas"})
+
     def test_plan_ok(self):
         red = {"A": ["1", "2", "3"]}
         dias = {"LV": ["A"]}
