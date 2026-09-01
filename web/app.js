@@ -169,6 +169,7 @@
     capaRuta = L.layerGroup().addTo(map);
     capaMarcadores = L.layerGroup().addTo(map);
     map.on("popupclose", alCerrarPopup);
+    map.on("click", alClicarElMapa);
   }
 
   function alCerrarPopup(evento) {
@@ -617,10 +618,20 @@
     return (paradaPorId[id] || {}).nombre || id;
   }
 
-  function fijarParada(campo, id) {
-    if (campo === "origen") origenSel = id;
-    else destinoSel = id;
+  // La selección puede ser una parada elegida a mano o un punto del mapa/una dirección:
+  // {tipo: "parada", id, nombre} | {tipo: "punto", lat, lon, nombre}
+  function fijarSeleccion(campo, seleccion) {
+    if (campo === "origen") origenSel = seleccion;
+    else destinoSel = seleccion;
     renderSelector(campo);
+  }
+
+  function fijarParada(campo, id) {
+    fijarSeleccion(campo, { tipo: "parada", id, nombre: nombreParada(id) });
+  }
+
+  function fijarPunto(campo, lat, lon, nombre) {
+    fijarSeleccion(campo, { tipo: "punto", lat, lon, nombre: nombre || "Punto en el mapa" });
   }
 
   function renderSelector(campo) {
@@ -630,7 +641,7 @@
       cont.innerHTML = `
         <div class="cl-elegida">
           <span class="cl-punto"></span>
-          <span class="cl-nombre">${escaparHtml(nombreParada(sel))}</span>
+          <span class="cl-nombre">${escaparHtml(sel.nombre)}</span>
           <button type="button" class="cl-quitar" aria-label="Quitar">&times;</button>
         </div>`;
       cont.querySelector(".cl-quitar").addEventListener("click", () => {
@@ -686,6 +697,29 @@
     mostrarAviso(campo === "origen" ? "Toca la parada de origen en el mapa" : "Toca la parada de destino en el mapa");
   }
 
+  async function alClicarElMapa(evento) {
+    // Solo cuando se está eligiendo origen o destino; si no, un clic en el mapa no hace nada.
+    if (!modoMapa) return;
+    const campo = modoMapa;
+    modoMapa = null;
+    const { lat, lng } = evento.latlng;
+    fijarPunto(campo, lat, lng, "Punto en el mapa");
+    abrirComoLlegar();
+    try {
+      const resp = await fetch(`/api/direccion?lat=${lat}&lon=${lng}`);
+      if (resp.ok) {
+        const { nombre } = await resp.json();
+        // Puede haber cambiado la selección mientras llegaba la respuesta.
+        const actual = campo === "origen" ? origenSel : destinoSel;
+        if (nombre && actual && actual.tipo === "punto" && actual.lat === lat && actual.lon === lng) {
+          fijarPunto(campo, lat, lng, nombre);
+        }
+      }
+    } catch (err) {
+      /* sin nombre: se queda como "Punto en el mapa" */
+    }
+  }
+
   function elegirCercana(campo) {
     if (!navigator.geolocation) {
       mostrarAviso("La geolocalización no está disponible en este dispositivo.");
@@ -709,14 +743,28 @@
       return;
     }
     cont.innerHTML = '<p class="cl-estado">Buscando ruta…</p>';
+    const parametros = [paramsExtremo("origen", origenSel), paramsExtremo("destino", destinoSel)];
     try {
-      const resp = await fetch(`/api/plan?origen=${encodeURIComponent(origenSel)}&destino=${encodeURIComponent(destinoSel)}`);
+      const resp = await fetch(`/api/plan?${parametros.join("&")}`);
       if (!resp.ok) throw new Error("plan");
       const data = await resp.json();
+      if (data.aviso === "fuera de la red") {
+        cont.innerHTML = '<p class="cl-estado">Esa dirección no tiene paradas cerca.</p>';
+        return;
+      }
+      if (data.aviso === "sin datos de paradas") {
+        cont.innerHTML = '<p class="cl-estado">Faltan los datos de paradas. Recarga la página.</p>';
+        return;
+      }
       renderRutas(data.rutas || []);
     } catch (err) {
       cont.innerHTML = '<p class="cl-estado">No se pudo calcular la ruta.</p>';
     }
+  }
+
+  function paramsExtremo(prefijo, sel) {
+    if (sel.tipo === "parada") return `${prefijo}=${encodeURIComponent(sel.id)}`;
+    return `${prefijo}_lat=${encodeURIComponent(sel.lat)}&${prefijo}_lon=${encodeURIComponent(sel.lon)}`;
   }
 
   function textoMinutos(ruta) {
