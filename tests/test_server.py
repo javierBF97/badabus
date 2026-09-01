@@ -266,6 +266,56 @@ class TestServer(unittest.TestCase):
         self.assertEqual(datos["rutas"], [])
         self.assertEqual(datos["aviso"], "fuera de la red")
 
+    def test_plan_con_cargar_paradas_fallando(self):
+        """Cuando cargar_paradas falla, devuelve 'sin datos de paradas'."""
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        def falla(*a, **kw):
+            raise OSError("sin datos")
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_paradas = server.ranking.cargar_paradas
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = falla
+        try:
+            # Con coordenadas (no ID) para que se intente resolver_extremo
+            status, body = self.get(
+                "/api/plan?origen_lat=38.88&origen_lon=-6.97&destino=3"
+            )
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            server.ranking.cargar_paradas = orig_paradas
+        self.assertEqual(status, 200)
+        datos = json.loads(body)
+        self.assertEqual(datos["rutas"], [])
+        self.assertEqual(datos["aviso"], "sin datos de paradas")
+
+    def test_plan_con_coordenadas_de_destino(self):
+        """Coordenadas en destino (espejo de origen): encontrar ruta y andando_min int."""
+        red = {"A": ["1", "2", "3"]}
+        dias = {"LV": ["A"]}
+        paradas = {"1": (38.88, -6.97), "2": (38.88, -6.96), "3": (38.88, -6.95)}
+        orig_datos = server.planner.cargar_datos
+        orig_dia = server.dia.tipo_dia_actual
+        orig_paradas = server.ranking.cargar_paradas
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = lambda *a, **kw: paradas
+        try:
+            status, body = self.get(
+                "/api/plan?origen=1&destino_lat=38.8801&destino_lon=-6.9501"
+            )
+        finally:
+            server.planner.cargar_datos = orig_datos
+            server.dia.tipo_dia_actual = orig_dia
+            server.ranking.cargar_paradas = orig_paradas
+        self.assertEqual(status, 200)
+        rutas = json.loads(body)["rutas"]
+        self.assertTrue(rutas, "debería encontrar ruta hacia una parada cercana")
+        self.assertIsInstance(rutas[0]["andando_min"], int)
+
     def test_plan_con_coordenadas_invalidas(self):
         status, _ = self.get("/api/plan?origen_lat=abc&origen_lon=-6.97&destino=3")
         self.assertEqual(status, 400)
