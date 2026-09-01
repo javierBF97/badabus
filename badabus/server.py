@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from badabus import bus_data_api as api
-from badabus import dia, planner, ranking
+from badabus import dia, nominatim, planner, ranking
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -33,6 +33,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_dia()
         elif path == "/api/config":
             self.handle_config()
+        elif path == "/api/buscar":
+            self.handle_buscar()
+        elif path == "/api/direccion":
+            self.handle_direccion()
         elif path.startswith("/data/"):
             self.handle_static(path.removeprefix("/data/"), DATA_DIR, DATA_FILES)
         elif path == "/":
@@ -125,6 +129,41 @@ class Handler(BaseHTTPRequestHandler):
         # Se pasa el fichero explícitamente: por defecto quedaría fijado al importar.
         clave = leer_env(ENV_FILE).get("CARTO_API_KEY", "")
         body = json.dumps({"carto_key": clave}, ensure_ascii=False).encode("utf-8")
+        self.send_bytes(200, body, "application/json; charset=utf-8")
+
+    def handle_buscar(self) -> None:
+        """Direcciones que coinciden con el texto, para el buscador de origen y destino."""
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        texto = (parse_qs(query).get("q") or [""])[0]
+        if not texto.strip():
+            self.send_bytes(200, b"[]", "application/json; charset=utf-8")
+            return
+        try:
+            sitios = nominatim.buscar(texto)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"  ! error buscando la dirección {texto!r}: {exc}")
+            self.fail(502, "no se pudo buscar la dirección")
+            return
+        body = json.dumps(sitios, ensure_ascii=False).encode("utf-8")
+        self.send_bytes(200, body, "application/json; charset=utf-8")
+
+    def handle_direccion(self) -> None:
+        """Nombre del sitio que hay en unas coordenadas, para los clics en el mapa."""
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        params = parse_qs(query)
+        try:
+            lat = float((params.get("lat") or [""])[0])
+            lon = float((params.get("lon") or [""])[0])
+        except ValueError:
+            self.fail(400, "lat y lon deben ser números")
+            return
+        try:
+            nombre = nominatim.direccion(lat, lon)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            # Sin nombre la ruta se calcula igual: no merece un error.
+            print(f"  ! no se pudo nombrar el punto {lat},{lon}: {exc}")
+            nombre = ""
+        body = json.dumps({"nombre": nombre}, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
 
     def send_bytes(self, status: int, body: bytes, content_type: str) -> None:

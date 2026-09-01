@@ -30,6 +30,10 @@ class TestServer(unittest.TestCase):
         # Stubea por defecto para que ningún test toque la red ni el disco
         bus_data_api.fetch_json = lambda action, **kw: []
         server.ranking.cargar_paradas = lambda *a, **kw: {}
+        self._orig_buscar = server.nominatim.buscar
+        self._orig_direccion = server.nominatim.direccion
+        server.nominatim.buscar = lambda *a, **kw: []
+        server.nominatim.direccion = lambda *a, **kw: ""
         self.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -37,6 +41,8 @@ class TestServer(unittest.TestCase):
 
     def tearDown(self):
         server.ranking.cargar_paradas = self._orig_cargar_paradas
+        server.nominatim.buscar = self._orig_buscar
+        server.nominatim.direccion = self._orig_direccion
         self.httpd.shutdown()
         self.httpd.server_close()
         bus_data_api.fetch_json = self._orig_fetch_json
@@ -134,6 +140,62 @@ class TestServer(unittest.TestCase):
         env = Path(self._tmp.name, "otro.env")
         env.write_text('# nota\n\nCARTO_API_KEY="con comillas"\nSUELTA\n', encoding="utf-8")
         self.assertEqual(server.leer_env(env), {"CARTO_API_KEY": "con comillas"})
+
+    def test_buscar_devuelve_direcciones(self):
+        original = server.nominatim.buscar
+        server.nominatim.buscar = lambda texto, **kw: [
+            {"nombre": "12, Calle Menacho, Badajoz", "lat": 38.87, "lon": -6.97}
+        ]
+        try:
+            status, body = self.get("/api/buscar?q=menacho")
+        finally:
+            server.nominatim.buscar = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)[0]["nombre"], "12, Calle Menacho, Badajoz")
+
+    def test_buscar_sin_texto_devuelve_lista_vacia(self):
+        status, body = self.get("/api/buscar")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), [])
+
+    def test_buscar_con_el_servicio_caido(self):
+        def boom(*a, **kw):
+            raise OSError("caido")
+        original = server.nominatim.buscar
+        server.nominatim.buscar = boom
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, _ = self.get("/api/buscar?q=menacho")
+        finally:
+            server.nominatim.buscar = original
+        self.assertEqual(status, 502)
+
+    def test_direccion_devuelve_el_nombre(self):
+        original = server.nominatim.direccion
+        server.nominatim.direccion = lambda lat, lon, **kw: "12, Calle Menacho, Badajoz"
+        try:
+            status, body = self.get("/api/direccion?lat=38.87&lon=-6.97")
+        finally:
+            server.nominatim.direccion = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"nombre": "12, Calle Menacho, Badajoz"})
+
+    def test_direccion_con_coordenadas_invalidas(self):
+        status, _ = self.get("/api/direccion?lat=abc&lon=-6.97")
+        self.assertEqual(status, 400)
+
+    def test_direccion_con_el_servicio_caido(self):
+        def boom(*a, **kw):
+            raise OSError("caido")
+        original = server.nominatim.direccion
+        server.nominatim.direccion = boom
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                status, body = self.get("/api/direccion?lat=38.87&lon=-6.97")
+        finally:
+            server.nominatim.direccion = original
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"nombre": ""})
 
     def test_plan_ok(self):
         red = {"A": ["1", "2", "3"]}
