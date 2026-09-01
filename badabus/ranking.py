@@ -115,27 +115,47 @@ def esperas_por_linea(tiempos: list[dict]) -> dict[str, float]:
 
 
 def puntuar(
-    rutas: list[list[dict]], red: dict, paradas: dict, esperas: dict
+    rutas: list[list[dict]],
+    red: dict,
+    paradas: dict,
+    esperas: dict,
+    andando_origen: dict | None = None,
+    andando_destino: dict | None = None,
 ) -> list[dict]:
-    """Ordena las rutas por tiempo estimado (trayecto + espera del primer bus) y
-    filtra las peores.
+    """Ordena las rutas por tiempo total estimado y filtra las mucho peores.
 
-    Cada ruta se devuelve como {"tramos", "viaje_min", "espera_min"} (minutos
-    redondeados; la espera es None si no se conoce). Sin coordenadas no se puede
-    estimar: se devuelven en el orden del planificador, sin puntuar.
+    El total es andar + esperar + bus. `esperas` va por parada de subida
+    ({id_parada: {linea: minutos}}), porque cada origen candidato tiene la suya.
+    `andando_origen` y `andando_destino` son {id_parada: km}; vacíos cuando el
+    usuario eligió paradas a mano y no hay caminata que contar.
+
+    Cada ruta se devuelve como {"tramos", "total_min", "viaje_min", "espera_min",
+    "andando_min"}. `total_min` es la suma y la única fuente de verdad: el frontend
+    la pinta, no la recalcula. Con los minutos redondeados y None donde el dato no
+    se conoce. Sin coordenadas no se puede estimar nada: se devuelven en el orden
+    del planificador.
     """
+    andando_origen = andando_origen or {}
+    andando_destino = andando_destino or {}
+    hay_caminata = bool(andando_origen or andando_destino)
+
     if not paradas:
         return [
-            {"tramos": ruta, "viaje_min": None, "espera_min": None}
+            {"tramos": ruta, "total_min": None, "viaje_min": None,
+             "espera_min": None, "andando_min": None}
             for ruta in rutas[:LIMITE_RUTAS]
         ]
 
     puntuadas = []
     for ruta in rutas:
+        subir = ruta[0]["subir"]
+        bajar = ruta[-1]["bajar"]
         viaje = minutos_viaje(ruta, red, paradas)
-        espera = esperas.get(ruta[0]["linea"], math.inf)
-        total = viaje + (espera if espera != math.inf else 0)
-        puntuadas.append((total, viaje, espera, ruta))
+        espera = esperas.get(subir, {}).get(ruta[0]["linea"], math.inf)
+        km = andando_origen.get(subir, 0.0) + andando_destino.get(bajar, 0.0)
+        andando = minutos_andando(km)
+        total = viaje + andando + (espera if espera != math.inf else 0)
+        puntuadas.append((total, viaje, espera, andando, ruta))
 
     if not puntuadas:
         return []
@@ -148,10 +168,12 @@ def puntuar(
     return [
         {
             "tramos": ruta,
+            "total_min": round(total),
             "viaje_min": round(viaje),
             "espera_min": round(espera) if espera != math.inf else None,
+            "andando_min": round(andando) if hay_caminata else None,
         }
-        for _, viaje, espera, ruta in aceptables[:LIMITE_RUTAS]
+        for total, viaje, espera, andando, ruta in aceptables[:LIMITE_RUTAS]
     ]
 
 

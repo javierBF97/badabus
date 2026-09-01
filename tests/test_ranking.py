@@ -161,38 +161,67 @@ class TestPuntuar(unittest.TestCase):
             [{"linea": "A", "subir": "1", "bajar": "2"}],
         ]
         salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {})
-        self.assertEqual([r["tramos"][0]["linea"] for r in salida], ["A"])  # B se descarta
+        self.assertEqual([r["tramos"][0]["linea"] for r in salida], ["A"])
 
-    def test_la_espera_desempata_entre_iguales(self):
-        # A y C recorren lo mismo (1->2); la espera decide.
+    def test_la_espera_de_su_parada_desempata(self):
         rutas = [
             [{"linea": "A", "subir": "1", "bajar": "2"}],
             [{"linea": "C", "subir": "1", "bajar": "2"}],
         ]
-        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"A": 8.0, "C": 1.0})
+        esperas = {"1": {"A": 8.0, "C": 1.0}}
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, esperas)
         self.assertEqual(salida[0]["tramos"][0]["linea"], "C")
 
     def test_forma_de_cada_ruta(self):
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
-        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"A": 4.0})
-        self.assertEqual(set(salida[0]), {"tramos", "viaje_min", "espera_min"})
-        self.assertIsInstance(salida[0]["viaje_min"], int)
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 4.0}})
+        self.assertEqual(
+            set(salida[0]), {"tramos", "total_min", "viaje_min", "espera_min", "andando_min"}
+        )
+        # El total se redondea entero, no como suma de redondeos: puede bailar un minuto.
+        suma = salida[0]["viaje_min"] + salida[0]["espera_min"]
+        self.assertLessEqual(abs(salida[0]["total_min"] - suma), 1)
         self.assertEqual(salida[0]["espera_min"], 4)
 
-    def test_espera_desconocida_es_none(self):
+    def test_sin_caminata_andando_es_none(self):
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {})
-        self.assertIsNone(salida[0]["espera_min"])
+        self.assertIsNone(salida[0]["andando_min"])
+
+    def test_la_caminata_entra_en_el_total(self):
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {},
+            andando_origen={"1": 0.5}, andando_destino={"2": 0.25},
+        )
+        esperado = round(ranking.minutos_andando(0.75))
+        self.assertEqual(salida[0]["andando_min"], esperado)
+
+    def test_una_parada_lejana_pierde_contra_una_cercana(self):
+        # Las dos rutas son iguales de largas en bus; decide la caminata.
+        red = {"A": ["1", "2"], "C": ["6", "2"]}
+        rutas = [
+            [{"linea": "C", "subir": "6", "bajar": "2"}],
+            [{"linea": "A", "subir": "1", "bajar": "2"}],
+        ]
+        salida = ranking.puntuar(
+            rutas, red, self.PARADAS, {},
+            andando_origen={"1": 0.05, "6": 0.9}, andando_destino={},
+        )
+        self.assertEqual(salida[0]["tramos"][0]["linea"], "A")
 
     def test_sin_paradas_devuelve_sin_puntuar(self):
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
-        salida = ranking.puntuar(rutas, self.RED, {}, {"A": 4.0})
-        self.assertEqual(salida, [{"tramos": rutas[0], "viaje_min": None, "espera_min": None}])
+        salida = ranking.puntuar(rutas, self.RED, {}, {"1": {"A": 4.0}})
+        self.assertEqual(
+            salida,
+            [{"tramos": rutas[0], "total_min": None, "viaje_min": None,
+              "espera_min": None, "andando_min": None}],
+        )
 
     def test_respeta_el_limite(self):
-        # Muchas rutas parecidas (misma línea directa) -> no se filtran, pero se recorta.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}] for _ in range(ranking.LIMITE_RUTAS + 3)]
-        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"A": 4.0})
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 4.0}})
         self.assertEqual(len(salida), ranking.LIMITE_RUTAS)
 
 
