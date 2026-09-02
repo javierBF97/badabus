@@ -95,6 +95,24 @@ de líneas cogida en otra parada**. Se deja una por combinación, la más rápid
 líneas recorren exactamente el mismo tramo, en lugar de descartar una se enseñan las dos:
 sirve la primera que pase, y saberlo acorta la espera.
 
+## Lo que no se sabe, no se inventa
+
+El servicio da **una sola llegada por línea y parada**: cuándo pasa el siguiente bus no lo
+dice nadie. Eso obliga a distinguir tres situaciones en lugar de dar siempre un número:
+
+- **Se sabe y da tiempo a llegar**: se muestra el total completo, con la espera dentro.
+- **Se sabe pero no da tiempo**: si el bus pasa antes de que termines de andar hasta la
+  parada, ese bus no es el tuyo, y cuándo pasa el siguiente es desconocido.
+- **No hay dato de paso**: igual, la espera no se sabe.
+
+En los dos últimos casos se muestra **"desde X min"** —el suelo real, andar más bus— y se
+explica por qué. Contar esa espera como cero era lo cómodo, pero premiaba precisamente a las
+rutas peor conocidas: en una consulta real, **el 54 % de las rutas llevaba un total que no se
+sostenía**, y las cuatro primeras que se ofrecían eran todas de ese grupo.
+
+Las rutas se siguen mostrando aunque no llegues al próximo bus. La ruta puede ser buena; lo
+que falta es el dato, y decirlo es más útil que esconderla o que fingir un número.
+
 ## Uso
 `badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
 (`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
