@@ -7,6 +7,12 @@
   const COLOR_FALLBACK = "#6b7280";
   const COLOR_BASE = "#1D9E75";
   const ALIAS_LINEA = { BGM1: "BG1", BGM2: "BG2" };
+  // Por qué no se puede dar un total cerrado. Nunca se inventa la espera del
+  // siguiente bus: el servicio solo da una llegada por línea.
+  const AVISOS_ESPERA = {
+    no_llegas: "no te da tiempo a coger el próximo",
+    sin_datos: "sin datos de paso ahora mismo",
+  };
   const BUSQUEDA_MIN_CARACTERES = 4;
   const BUSQUEDA_ESPERA_MS = 200;
   const BUSQUEDA_MS_ENTRE_PETICIONES = 1000;
@@ -873,12 +879,17 @@
     // El total lo calcula el servidor: aquí solo se pinta, para que no haya dos
     // fórmulas que puedan desincronizarse.
     if (ruta.total_min == null) return "";
-    const partes = [`~${ruta.total_min} min`];
+    // Sin espera conocida el total es un suelo, no una estimación: "desde" lo dice.
+    const incierta = ruta.aviso_espera != null;
+    const partes = [incierta ? `desde ${ruta.total_min} min` : `~${ruta.total_min} min`];
     if (ruta.andando_min != null) partes.push(`${ruta.andando_min} min andando`);
     if (ruta.espera_min != null) {
       partes.push(`próximo ${escaparHtml(ruta.tramos[0].linea)} en ${ruta.espera_min} min`);
     }
-    return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>`;
+    const cola = incierta
+      ? ` <span class="cl-aviso">${AVISOS_ESPERA[ruta.aviso_espera] || ""}</span>`
+      : "";
+    return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>${cola}`;
   }
 
   function renderRutas(rutas) {

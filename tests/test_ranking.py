@@ -176,12 +176,44 @@ class TestPuntuar(unittest.TestCase):
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 4.0}})
         self.assertEqual(
-            set(salida[0]), {"tramos", "total_min", "viaje_min", "espera_min", "andando_min"}
+            set(salida[0]),
+            {"tramos", "total_min", "viaje_min", "espera_min", "andando_min", "aviso_espera"},
         )
         # El total se redondea entero, no como suma de redondeos: puede bailar un minuto.
         suma = salida[0]["viaje_min"] + salida[0]["espera_min"]
         self.assertLessEqual(abs(salida[0]["total_min"] - suma), 1)
         self.assertEqual(salida[0]["espera_min"], 4)
+
+    def test_un_bus_que_pasa_antes_de_llegar_no_cuenta_como_espera(self):
+        # 0.9 km andando son ~15 min: un bus en 3 no se coge. Y cuándo pasa el
+        # siguiente no lo dice el servicio, así que la espera es desconocida.
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {"1": {"A": 3.0}}, andando_origen={"1": 0.9},
+        )
+        self.assertEqual(salida[0]["aviso_espera"], "no_llegas")
+        self.assertIsNone(salida[0]["espera_min"])
+
+    def test_un_bus_que_da_tiempo_a_coger_si_cuenta(self):
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {"1": {"A": 30.0}}, andando_origen={"1": 0.9},
+        )
+        self.assertIsNone(salida[0]["aviso_espera"])
+        self.assertEqual(salida[0]["espera_min"], 30)
+
+    def test_sin_dato_de_paso_se_avisa(self):
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {})
+        self.assertEqual(salida[0]["aviso_espera"], "sin_datos")
+        self.assertIsNone(salida[0]["espera_min"])
+
+    def test_eligiendo_la_parada_a_mano_no_se_supone_caminata(self):
+        # Sin coordenadas no se sabe dónde está el usuario, así que no se puede
+        # afirmar que no llegue.
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 0.0}})
+        self.assertIsNone(salida[0]["aviso_espera"])
 
     def test_sin_caminata_andando_es_none(self):
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
@@ -216,7 +248,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(
             salida,
             [{"tramos": rutas[0], "total_min": None, "viaje_min": None,
-              "espera_min": None, "andando_min": None}],
+              "espera_min": None, "andando_min": None, "aviso_espera": None}],
         )
 
     def test_respeta_el_limite(self):

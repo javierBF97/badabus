@@ -13,6 +13,7 @@ LIMITE_RUTAS = 4               # máximo de alternativas devueltas
 VELOCIDAD_ANDANDO_KMH = 4.5    # paso normal
 FACTOR_CALLEJEO = 1.3          # andando tampoco se va en línea recta
 RADIO_PARADAS_KM = 1.0         # tope de cordura al buscar paradas cercanas
+MARGEN_LLEGADA_MIN = 2         # margen para dar un bus por cogido (andar es estimado)
 
 RADIO_TIERRA_KM = 6371.0
 
@@ -187,7 +188,7 @@ def puntuar(
     if not paradas:
         return [
             {"tramos": ruta, "total_min": None, "viaje_min": None,
-             "espera_min": None, "andando_min": None}
+             "espera_min": None, "andando_min": None, "aviso_espera": None}
             for ruta in rutas[:LIMITE_RUTAS]
         ]
 
@@ -196,11 +197,23 @@ def puntuar(
         subir = ruta[0]["subir"]
         bajar = ruta[-1]["bajar"]
         viaje = minutos_viaje(ruta, red, paradas)
-        espera = esperas.get(subir, {}).get(ruta[0]["linea"], math.inf)
         km = andando_origen.get(subir, 0.0) + andando_destino.get(bajar, 0.0)
         andando = minutos_andando(km)
-        total = viaje + andando + (espera if espera != math.inf else 0)
-        puntuadas.append((total, viaje, espera, andando, ruta))
+        proximo = esperas.get(subir, {}).get(ruta[0]["linea"])
+        hasta_la_parada = minutos_andando(andando_origen.get(subir, 0.0))
+        if proximo is None or proximo == math.inf:
+            # Sin dato no se sabe la espera. Contarla como cero premiaría a la ruta
+            # justo por no tener información, que es lo contrario de lo que toca.
+            aviso, espera = "sin_datos", None
+        elif subir in andando_origen and proximo < hasta_la_parada + MARGEN_LLEGADA_MIN:
+            # Ese bus se va antes de que llegues andando. El servicio solo da una
+            # llegada por línea, así que cuándo pasa el siguiente es desconocido: la
+            # espera no es cero, es que no se sabe.
+            aviso, espera = "no_llegas", None
+        else:
+            aviso, espera = None, proximo
+        total = viaje + andando + (espera or 0)
+        puntuadas.append((total, viaje, espera, andando, aviso, ruta))
 
     if not puntuadas:
         return []
@@ -216,12 +229,15 @@ def puntuar(
     return [
         {
             "tramos": ruta,
+            # Con la espera desconocida el total es un suelo, no una promesa: el
+            # frontend lo dice ("desde X"), y `aviso_espera` explica por qué.
             "total_min": round(total),
             "viaje_min": round(viaje),
-            "espera_min": round(espera) if espera != math.inf else None,
+            "espera_min": round(espera) if espera is not None else None,
             "andando_min": round(andando) if hay_caminata else None,
+            "aviso_espera": aviso,
         }
-        for total, viaje, espera, andando, ruta in aceptables[:LIMITE_RUTAS]
+        for total, viaje, espera, andando, aviso, ruta in aceptables[:LIMITE_RUTAS]
     ]
 
 
