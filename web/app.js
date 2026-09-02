@@ -7,6 +7,10 @@
   const COLOR_FALLBACK = "#6b7280";
   const COLOR_BASE = "#1D9E75";
   const ALIAS_LINEA = { BGM1: "BG1", BGM2: "BG2" };
+  const BUSQUEDA_MIN_CARACTERES = 4;
+  const BUSQUEDA_ESPERA_MS = 200;
+  const BUSQUEDA_MS_ENTRE_PETICIONES = 1000;
+  const BUSQUEDA_CACHE_MAX = 50;
 
   const CAPAS_TILES = {
     claro: { url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" },
@@ -669,57 +673,92 @@
   }
 
   const temporizadoresBusqueda = {};
+  // Texto ya buscado -> direcciones. Repetir una búsqueda sale al instante y sin petición.
+  const cacheDirecciones = new Map();
+  let ultimaPeticionDirecciones = 0;
 
-  // Nominatim limita a una petición por segundo: se espera a que el usuario pare de
-  // escribir y no se consulta con menos de 4 caracteres. Además se comprueba que el
-  // texto siga siendo el mismo al volver, porque una respuesta lenta de una consulta
-  // anterior podría pisar los resultados de la actual.
+  function recordarDirecciones(clave, sitios) {
+    if (cacheDirecciones.size >= BUSQUEDA_CACHE_MAX) {
+      cacheDirecciones.delete(cacheDirecciones.keys().next().value);
+    }
+    cacheDirecciones.set(clave, sitios);
+  }
+
+  // Nominatim limita a una petición por segundo y prohíbe el autocompletado, así que la
+  // espera corta solo decide cuándo *querríamos* buscar: el hueco mínimo entre peticiones
+  // es lo que garantiza no pasarse. Una consulta que cae dentro de ese hueco no se
+  // descarta, se retrasa, y sale con el último texto escrito. Menos de 4 caracteres no se
+  // consulta. Al volver se comprueba que el texto siga igual, porque una respuesta lenta
+  // de una consulta anterior podría pisar los resultados de la actual.
   function buscarDirecciones(campo, texto, sigueVigente, alTener) {
     clearTimeout(temporizadoresBusqueda[campo]);
-    if (texto.trim().length < 4) {
-      alTener([]);
+    const clave = texto.trim().toLowerCase();
+    if (clave.length < BUSQUEDA_MIN_CARACTERES) {
+      alTener("listo", []);
       return;
     }
+    if (cacheDirecciones.has(clave)) {
+      alTener("listo", cacheDirecciones.get(clave));
+      return;
+    }
+    alTener("buscando", []);
+    const hueco = BUSQUEDA_MS_ENTRE_PETICIONES - (Date.now() - ultimaPeticionDirecciones);
     temporizadoresBusqueda[campo] = setTimeout(async () => {
+      ultimaPeticionDirecciones = Date.now();
       let encontradas = [];
+      let respondio = false;
       try {
         const resp = await fetch(`/api/buscar?q=${encodeURIComponent(texto)}`);
-        if (resp.ok) encontradas = await resp.json();
+        if (resp.ok) {
+          encontradas = await resp.json();
+          respondio = true;
+        }
       } catch (err) {
         /* sin direcciones: las paradas siguen saliendo */
       }
-      if (sigueVigente()) alTener(encontradas);
-    }, 600);
+      // Un fallo no se guarda: si no, un corte de red dejaría ese texto vacío para siempre.
+      if (respondio) recordarDirecciones(clave, encontradas);
+      if (sigueVigente()) alTener("listo", encontradas);
+    }, Math.max(BUSQUEDA_ESPERA_MS, hueco));
   }
 
   function renderBusquedaCL(cont, campo, texto) {
     const paradasEncontradas = buscarParadas(texto);
-    const pintar = (direcciones) => {
+    const pintar = (estado, direcciones) => {
       cont.innerHTML = "";
-      if (!paradasEncontradas.length && !direcciones.length) {
+      const buscando = estado === "buscando";
+      if (!paradasEncontradas.length && !direcciones.length && !buscando) {
         cont.hidden = true;
         return;
       }
+      // Las direcciones van primero porque son lo que se busca; las paradas salen al
+      // instante y las empujaban fuera de la vista. Mientras llegan se deja puesta su
+      // cabecera, para que las paradas no salten hacia abajo justo al ir a tocarlas.
+      if (direcciones.length || buscando) cont.appendChild(cabeceraGrupo("Direcciones"));
+      for (const sitio of direcciones) {
+        cont.appendChild(
+          itemResultado(`⌂ ${sitio.nombre}`, () => fijarPunto(campo, sitio.lat, sitio.lon, sitio.nombre))
+        );
+      }
+      if (buscando) cont.appendChild(avisoBuscando());
       if (paradasEncontradas.length) {
         cont.appendChild(cabeceraGrupo("Paradas"));
         for (const parada of paradasEncontradas) {
           cont.appendChild(itemResultado(`● ${parada.nombre}`, () => fijarParada(campo, parada.id)));
         }
       }
-      if (direcciones.length) {
-        cont.appendChild(cabeceraGrupo("Direcciones"));
-        for (const sitio of direcciones) {
-          cont.appendChild(
-            itemResultado(`⌂ ${sitio.nombre}`, () => fijarPunto(campo, sitio.lat, sitio.lon, sitio.nombre))
-          );
-        }
-      }
       cont.hidden = false;
     };
-    pintar([]);
     // El input puede haber cambiado cuando llegue la respuesta: solo se pinta si sigue igual.
     const inputActual = cont.parentElement.querySelector(".cl-input");
     buscarDirecciones(campo, texto, () => inputActual && inputActual.value === texto, pintar);
+  }
+
+  function avisoBuscando() {
+    const div = document.createElement("div");
+    div.className = "cl-buscando";
+    div.textContent = "Buscando direcciones…";
+    return div;
   }
 
   function cabeceraGrupo(titulo) {

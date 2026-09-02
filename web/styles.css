@@ -315,9 +315,17 @@ button:hover {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  /* Con scroll propio: sin tope, los últimos resultados se salían del panel. */
+  max-height: 46vh;
+  overflow-y: auto;
   z-index: 1700;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.cl-buscando {
+  padding: 9px 12px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
 .cl-grupo {
