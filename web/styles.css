@@ -398,6 +398,12 @@ button:hover {
   font-size: 12px;
 }
 
+.cl-lineas {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
 .cl-tramo-txt {
   color: var(--text-muted);
   overflow: hidden;

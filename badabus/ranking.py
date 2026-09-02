@@ -114,6 +114,51 @@ def esperas_por_linea(tiempos: list[dict]) -> dict[str, float]:
     return esperas
 
 
+def _fusionar_por_paradas(puntuadas: list) -> list:
+    """Une las rutas que suben y bajan en las mismas paradas y solo cambian de línea.
+
+    No son alternativas distintas: son el mismo viaje con varios buses que sirven, y
+    eso conviene saberlo porque se coge el primero que pase. Solo se fusionan las que
+    difieren en un único tramo; si cambian dos, no consta que esa combinación exista.
+    """
+    grupos: dict[tuple, list] = {}
+    for p in puntuadas:
+        grupos.setdefault(tuple((t["subir"], t["bajar"]) for t in p[-1]), []).append(p)
+
+    salida = []
+    for miembros in grupos.values():
+        base = miembros[0]
+        lineas_base = [t["linea"] for t in base[-1]]
+        otras: dict[int, set] = {}
+        for otro in miembros[1:]:
+            lineas = [t["linea"] for t in otro[-1]]
+            distintas = [i for i, (a, b) in enumerate(zip(lineas_base, lineas, strict=True)) if a != b]
+            if len(distintas) == 1:
+                otras.setdefault(distintas[0], set()).add(lineas[distintas[0]])
+            else:
+                salida.append(otro)
+        if otras:
+            tramos = [dict(t) for t in base[-1]]
+            for i, lineas in otras.items():
+                tramos[i]["alternativas"] = sorted(lineas)
+            base = (*base[:-1], tramos)
+        salida.append(base)
+    salida.sort(key=lambda p: p[0])
+    return salida
+
+
+def _una_por_combinacion(puntuadas: list) -> list:
+    """Una sola ruta por combinación de líneas: la más rápida.
+
+    La misma combinación cogida en otra parada es el mismo viaje andando de más, no
+    una alternativa. Llegan ordenadas por tiempo, así que la primera es la buena.
+    """
+    vistas: dict[tuple, tuple] = {}
+    for p in puntuadas:
+        vistas.setdefault(tuple(t["linea"] for t in p[-1]), p)
+    return list(vistas.values())
+
+
 def puntuar(
     rutas: list[list[dict]],
     red: dict,
@@ -160,6 +205,9 @@ def puntuar(
     if not puntuadas:
         return []
     puntuadas.sort(key=lambda p: p[0])
+    # Se quitan las repetidas antes de filtrar y recortar: si no, las cuatro plazas
+    # se las llevan variantes del mismo viaje y las opciones buenas no se ven.
+    puntuadas = _una_por_combinacion(_fusionar_por_paradas(puntuadas))
     mejor = puntuadas[0][0]
     # Primero se descartan las mucho peores, y solo después se recorta: si no,
     # una ruta buena podría quedar fuera del límite por culpa de otra que luego

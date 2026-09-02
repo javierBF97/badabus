@@ -220,9 +220,38 @@ class TestPuntuar(unittest.TestCase):
         )
 
     def test_respeta_el_limite(self):
-        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}] for _ in range(ranking.LIMITE_RUTAS + 3)]
-        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 4.0}})
+        # Cada ruta con su línea y su parada de subida, para que no las una ninguna
+        # regla de fusión: aquí se comprueba el recorte, no el deduplicado.
+        cuantas = ranking.LIMITE_RUTAS + 3
+        red = {f"L{i}": [f"s{i}", "2"] for i in range(cuantas)}
+        paradas = {"2": (38.880, -6.965)}
+        paradas.update({f"s{i}": (38.880, -6.970 + i / 20000) for i in range(cuantas)})
+        rutas = [[{"linea": f"L{i}", "subir": f"s{i}", "bajar": "2"}] for i in range(cuantas)]
+        salida = ranking.puntuar(rutas, red, paradas, {})
         self.assertEqual(len(salida), ranking.LIMITE_RUTAS)
+
+    def test_no_repite_la_misma_combinacion_de_lineas(self):
+        # La misma línea cogida en otra parada es el mismo viaje andando de más,
+        # no una alternativa. Se queda la más corta.
+        red = {"A": ["1", "3", "2"]}
+        paradas = {"1": (38.880, -6.970), "3": (38.880, -6.968), "2": (38.880, -6.965)}
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "2"}],
+            [{"linea": "A", "subir": "3", "bajar": "2"}],
+        ]
+        salida = ranking.puntuar(rutas, red, paradas, {})
+        self.assertEqual(len(salida), 1)
+        self.assertEqual(salida[0]["tramos"][0]["subir"], "3")
+
+    def test_agrupa_las_lineas_que_hacen_el_mismo_tramo(self):
+        # A y C van de la 1 a la 2 igual: es un viaje con dos buses que sirven.
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "2"}],
+            [{"linea": "C", "subir": "1", "bajar": "2"}],
+        ]
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {})
+        self.assertEqual(len(salida), 1)
+        self.assertEqual(salida[0]["tramos"][0]["alternativas"], ["C"])
 
 
 class TestCargarParadas(unittest.TestCase):

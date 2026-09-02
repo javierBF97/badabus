@@ -858,6 +858,17 @@
     return `${prefijo}_lat=${encodeURIComponent(sel.lat)}&${prefijo}_lon=${encodeURIComponent(sel.lon)}`;
   }
 
+  // Un tramo puede tener varias líneas que lo hacen igual: se pintan todas, porque
+  // sirve la primera que pase y eso acorta la espera.
+  function chipsDeTramo(tramo) {
+    return [tramo.linea, ...(tramo.alternativas || [])]
+      .map((linea) => {
+        const color = colorLinea(linea);
+        return `<span class="chip-linea" style="background:${color};color:${textoSobre(color)}">${escaparHtml(linea)}</span>`;
+      })
+      .join("");
+  }
+
   function textoMinutos(ruta) {
     // El total lo calcula el servidor: aquí solo se pinta, para que no haya dos
     // fórmulas que puedan desincronizarse.
@@ -889,8 +900,7 @@
       const cabecera = nt === 0 ? "Directo" : nt + (nt > 1 ? " transbordos" : " transbordo");
       const partes = [`<div class="cl-ruta-cab">${cabecera}${textoMinutos(ruta)}</div>`];
       tramos.forEach((tramo, i) => {
-        const color = colorLinea(tramo.linea);
-        partes.push(`<div class="cl-tramo"><span class="chip-linea" style="background:${color};color:${textoSobre(color)}">${escaparHtml(tramo.linea)}</span><span class="cl-tramo-txt">${escaparHtml(nombreParada(tramo.subir))} → ${escaparHtml(nombreParada(tramo.bajar))}</span></div>`);
+        partes.push(`<div class="cl-tramo"><span class="cl-lineas">${chipsDeTramo(tramo)}</span><span class="cl-tramo-txt">${escaparHtml(nombreParada(tramo.subir))} → ${escaparHtml(nombreParada(tramo.bajar))}</span></div>`);
         if (i < tramos.length - 1) partes.push(`<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`);
       });
       div.innerHTML = partes.join("");
