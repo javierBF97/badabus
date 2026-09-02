@@ -197,6 +197,20 @@ class TestServer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body), {"nombre": ""})
 
+    def test_host_por_defecto_es_solo_local(self):
+        self.assertEqual(server.HOST_POR_DEFECTO, "127.0.0.1")
+
+    def test_el_env_puede_abrir_el_servidor_a_la_red(self):
+        env = Path(self._tmp.name, "host.env")
+        env.write_text("BADABUS_HOST=0.0.0.0\n", encoding="utf-8")
+        self.assertEqual(server.leer_env(env).get("BADABUS_HOST"), "0.0.0.0")
+
+    def test_sin_env_no_hay_host_configurado(self):
+        env = Path(self._tmp.name, "vacio.env")
+        env.write_text("CARTO_API_KEY=abc\n", encoding="utf-8")
+        leido = server.leer_env(env)
+        self.assertEqual(leido.get("BADABUS_HOST", server.HOST_POR_DEFECTO), "127.0.0.1")
+
     def test_plan_ok(self):
         red = {"A": ["1", "2", "3"]}
         dias = {"LV": ["A"]}

@@ -1,4 +1,5 @@
 import json
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -6,7 +7,8 @@ from urllib.parse import parse_qs
 from badabus import bus_data_api as api
 from badabus import dia, nominatim, planner, ranking
 
-HOST = "127.0.0.1"
+# Solo local por defecto. Para abrirlo a la red, BADABUS_HOST=0.0.0.0 en el .env.
+HOST_POR_DEFECTO = "127.0.0.1"
 PORT = 8000
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -261,9 +263,26 @@ def leer_env(ruta: Path = ENV_FILE) -> dict[str, str]:
     return valores
 
 
+def ip_en_la_red() -> str:
+    """IP de este equipo en la red local, para poder abrir la app desde el móvil."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return ""
+    finally:
+        sock.close()
+
+
 def main() -> None:
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"Sirviendo en http://{HOST}:{PORT} (Ctrl+C para parar)")
+    host = leer_env(ENV_FILE).get("BADABUS_HOST", HOST_POR_DEFECTO)
+    server = ThreadingHTTPServer((host, PORT), Handler)
+    print(f"Sirviendo en http://{host}:{PORT} (Ctrl+C para parar)")
+    if host == "0.0.0.0":  # noqa: S104 — apertura deliberada, se pide en el .env
+        ip = ip_en_la_red()
+        if ip:
+            print(f"Desde otro dispositivo de la red: http://{ip}:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
