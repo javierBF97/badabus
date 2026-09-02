@@ -59,6 +59,42 @@ una de una línea que va al lado contrario, y a 250 m otra que lleva directo. Po
 prueban varias paradas próximas y se deja que el ranking decida, con el tiempo andando ya
 sumado al total.
 
+## Cómo se buscan las rutas
+
+Esta parte se ha medido más que decidido, y conviene dejar constancia de lo que se probó,
+porque casi nada salió como se esperaba.
+
+El planificador buscaba un par origen-destino cada vez. Mientras solo se miraban las cuatro
+paradas más cercanas iba sobrado, pero cuatro paradas juntas suelen ser de las mismas
+líneas, así que había líneas que no se consideraban nunca: la parada de una línea a 500 m
+podía ser la vigésima más próxima y no entrar jamás en la búsqueda. Al ampliar a todas las
+de 1 km, los pares pasaron a ser miles y el coste se disparó a **2.700 ms**.
+
+Se probaron tres caminos:
+
+- **Desde todos los orígenes a la vez, enumerando todas las rutas.** Salió peor:
+  **15.000 ms**, y encima con resultados de menos calidad. Al enumerarlo todo, las primeras
+  posiciones se llenaban de variantes del mismo viaje y las opciones buenas desaparecían.
+- **Hacia atrás, partiendo del destino.** Más rápido cuando el destino tiene menos paradas
+  que el origen (6 ms frente a 11), pero invirtiendo los extremos gana la búsqueda normal.
+  Ganar siempre exige mantener las dos direcciones, y son milisegundos que no se notan.
+- **Por rondas, recordando solo unas pocas formas de llegar a cada parada.** Una ronda es
+  un bus más y recorre la red una sola vez, se salga de una parada o de setenta. **25 ms**
+  en el peor caso.
+
+Se quedó la tercera. Lo interesante es que recordar pocos caminos no es un mal menor que se
+acepta a cambio de velocidad: **da mejor resultado que enumerarlo todo**, porque no ahoga
+las alternativas buenas entre variantes de un mismo viaje.
+
+Después apareció otro cuello de botella, este de cosecha propia: los tiempos en vivo se
+pedían parada por parada y en fila, así que con setenta paradas eran **8 segundos**. Se
+piden solo donde alguna ruta hace subir, y todas a la vez: **medio segundo**.
+
+Por último, de 216 rutas encontradas en una consulta real, **195 eran la misma combinación
+de líneas cogida en otra parada**. Se deja una por combinación, la más rápida. Y cuando dos
+líneas recorren exactamente el mismo tramo, en lugar de descartar una se enseñan las dos:
+sirve la primera que pase, y saberlo acorta la espera.
+
 ## Uso
 `badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
 (`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
