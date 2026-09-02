@@ -113,6 +113,52 @@ sostenía**, y las cuatro primeras que se ofrecían eran todas de ese grupo.
 Las rutas se siguen mostrando aunque no llegues al próximo bus. La ruta puede ser buena; lo
 que falta es el dato, y decirlo es más útil que esconderla o que fingir un número.
 
+## Frecuencias de paso
+
+El servicio no publica sus frecuencias en ninguna API: están en su web como **imágenes**, una
+por línea, con la hora de inicio, la de fin, cada cuánto pasa y en qué minutos sale de
+cabecera. Ese dato es lo único que permite estimar cuándo pasa el **siguiente** bus, porque el
+endpoint de tiempos solo informa del próximo.
+
+Por eso ese dato se transcribe a mano a **`data/frecuencias.json`**, que **no se incluye
+aquí**: es del operador y este proyecto no lo redistribuye, igual que el resto de `data/`.
+Quien quiera esa precisión lo crea con el formato de abajo.
+
+**La aplicación funciona sin ese fichero.** Sin él las esperas quedan como desconocidas y las
+tarjetas lo dicen ("desde X min · sin datos de paso"), que es el mismo camino que ya se sigue
+cuando el dato en vivo falla. Con él, los tiempos se cierran.
+
+Cada línea aparece en una de tres formas, según cómo publique el operador su horario:
+
+```jsonc
+{
+  "lineas": {
+    "EJEMPLO-1": {                      // frecuencia fija: lo más común
+      "LV": { "desde": "07:00", "hasta": "23:20", "frecuencia_min": 20,
+              "cabeceras": { "Cabecera Norte": [0, 20, 40] } }
+    },
+    "EJEMPLO-2": {                      // la frecuencia cambia durante el día
+      "LV": { "desde": "07:00", "hasta": "23:10", "frecuencia_min": [15, 20],
+              "tramos": { "Cabecera Norte": [
+                { "desde": "07:00", "hasta": "13:00", "minutos": [0, 15, 30, 45] },
+                { "desde": "13:00", "hasta": "23:00", "minutos": [0, 20, 40] }
+              ] } }
+    },
+    "EJEMPLO-3": {                      // sin patrón: horas de salida sueltas
+      "LV": { "desde": "06:30", "hasta": "22:45",
+              "salidas": { "Cabecera Norte": ["06:30", "08:00", "09:30"] } }
+    }
+  }
+}
+```
+
+Cada línea se indexa por tipo de día (`LV`, `SAB`, `DOM`), como `dias.json`. El fichero dice
+**qué horario sigue una línea cuando circula**; de si circula hoy sigue respondiendo el dato en
+vivo, que es más fiable: algunas líneas solo salen ciertos domingos y eso no se modela.
+
+Se publican como imágenes sin número de versión, así que **caduca sin avisar**. El campo
+`transcrito` guarda la fecha en que se copió.
+
 ## Uso
 `badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
 (`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
