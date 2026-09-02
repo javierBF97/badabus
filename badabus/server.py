@@ -1,5 +1,6 @@
 import json
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -15,6 +16,8 @@ DATA_DIR = BASE_DIR / "data"
 WEB_DIR = BASE_DIR / "web"
 DATA_FILES = {"paradas.json", "lineas.json", "red.json", "shapes.json", "dias.json"}
 ENV_FILE = BASE_DIR / ".env"
+# Las consultas de tiempos van en paralelo, pero sin agobiar al servicio.
+CONSULTAS_A_LA_VEZ = 8
 WEB_FILES = {"index.html", "app.js", "styles.css"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -112,22 +115,15 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"  ! no se pudo consultar el tipo de día, uso el calendario: {exc}")
                 tipo = dia.tipo_dia_local()
             activas = dias.get(tipo) or {lin for lins in dias.values() for lin in lins}
-            rutas = []
-            for origen in origen_ids:
-                for destino in destino_ids:
-                    rutas.extend(planner.planificar(origen, destino, red, activas))
+            rutas = planner.planificar_muchos(origen_ids, destino_ids, red, activas)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             print(f"  ! error planificando {origen_ids}->{destino_ids}: {exc}")
             self.fail(502, "no se pudo calcular la ruta")
             return
         # Enriquecido best-effort: si falla el dato en vivo, se devuelve igual.
-        esperas = {}
-        for origen in origen_ids:
-            try:
-                tiempos = api.parse_tiempos(api.fetch_json("tiempos", parada=origen))
-                esperas[origen] = ranking.esperas_por_linea(tiempos)
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
+        # Solo se preguntan las paradas donde alguna ruta hace subir. Las candidatas
+        # son muchas más y cada una cuesta una petición al servicio.
+        esperas = esperas_en_vivo({ruta[0]["subir"] for ruta in rutas if ruta})
         try:
             rutas = ranking.puntuar(
                 rutas, red, paradas, esperas, andando_origen, andando_destino
@@ -224,6 +220,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:
         pass
+
+
+def esperas_en_vivo(paradas: set) -> dict:
+    """Minutos que falta para el próximo bus de cada línea, por parada.
+
+    Las consultas son independientes y se pasan casi todo el rato esperando al
+    servicio, así que lanzarlas a la vez cuesta lo que la más lenta en lugar de la
+    suma. Si alguna falla se devuelven las demás: el dato en vivo afina el orden,
+    no hace falta para contestar.
+    """
+    if not paradas:
+        return {}
+
+    def consultar(parada: str):
+        try:
+            tiempos = api.parse_tiempos(api.fetch_json("tiempos", parada=parada))
+            return parada, ranking.esperas_por_linea(tiempos)
+        except (OSError, ValueError, KeyError, TypeError):
+            return parada, None
+
+    with ThreadPoolExecutor(max_workers=CONSULTAS_A_LA_VEZ) as pool:
+        return {p: e for p, e in pool.map(consultar, paradas) if e is not None}
 
 
 def resolver_extremo(

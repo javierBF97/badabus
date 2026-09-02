@@ -263,10 +263,12 @@ class TestParadasCercanas(unittest.TestCase):
         salida = ranking.paradas_cercanas(38.8800, -6.9700, self.PARADAS)
         self.assertNotIn("fuera", [i for i, _ in salida])
 
-    def test_respeta_el_maximo(self):
+    def test_devuelve_todas_las_del_radio(self):
+        # Antes se recortaba a las más próximas, y eso escondía líneas enteras:
+        # varias paradas pegadas suelen ser de las mismas líneas.
         muchas = {str(n): (38.8800 + n / 10000, -6.9700) for n in range(20)}
         salida = ranking.paradas_cercanas(38.8800, -6.9700, muchas)
-        self.assertEqual(len(salida), ranking.MAX_PARADAS_CERCANAS)
+        self.assertEqual(len(salida), 20)
 
     def test_sin_paradas_cerca_devuelve_vacio(self):
         salida = ranking.paradas_cercanas(0.0, 0.0, self.PARADAS)

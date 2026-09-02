@@ -13,7 +13,6 @@ LIMITE_RUTAS = 4               # máximo de alternativas devueltas
 VELOCIDAD_ANDANDO_KMH = 4.5    # paso normal
 FACTOR_CALLEJEO = 1.3          # andando tampoco se va en línea recta
 RADIO_PARADAS_KM = 1.0         # tope de cordura al buscar paradas cercanas
-MAX_PARADAS_CERCANAS = 4
 
 RADIO_TIERRA_KM = 6371.0
 
@@ -62,11 +61,12 @@ def minutos_andando(km: float) -> float:
 def paradas_cercanas(
     lat: float, lon: float, paradas: dict
 ) -> list[tuple[str, float]]:
-    """Las paradas más próximas a un punto, como [(id, km)], de más cerca a
-    más lejos.
+    """Las paradas a menos de RADIO_PARADAS_KM de un punto, como [(id, km)], de
+    más cerca a más lejos.
 
-    Se descartan las que pasen de RADIO_PARADAS_KM y se devuelven como mucho
-    MAX_PARADAS_CERCANAS.
+    No se recorta la lista: quedarse con las más próximas escondía líneas enteras,
+    porque varias paradas pegadas suelen ser de las mismas líneas. El planificador
+    ya no paga por mirarlas todas, y el ranking decide si compensa andar.
     """
     cerca = []
     for parada, coords in paradas.items():
@@ -74,7 +74,7 @@ def paradas_cercanas(
         if km <= RADIO_PARADAS_KM:
             cerca.append((parada, km))
     cerca.sort(key=lambda p: p[1])
-    return cerca[:MAX_PARADAS_CERCANAS]
+    return cerca
 
 
 _ALIAS_LINEA = {"BGM1": "BG1", "BGM2": "BG2"}
