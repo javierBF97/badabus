@@ -12,6 +12,7 @@
   const AVISOS_ESPERA = {
     no_llegas: "no te da tiempo a coger el próximo",
     sin_datos: "sin datos de paso ahora mismo",
+    fuera_de_servicio: "esa línea ya no pasa a estas horas",
   };
   const BUSQUEDA_MIN_CARACTERES = 4;
   const BUSQUEDA_ESPERA_MS = 200;
@@ -879,14 +880,23 @@
     // El total lo calcula el servidor: aquí solo se pinta, para que no haya dos
     // fórmulas que puedan desincronizarse.
     if (ruta.total_min == null) return "";
-    // Sin espera conocida el total es un suelo, no una estimación: "desde" lo dice.
-    const incierta = ruta.aviso_espera != null;
-    const partes = [incierta ? `desde ${ruta.total_min} min` : `~${ruta.total_min} min`];
+    // Con la espera dentro el total se sostiene, aunque el bus sea el siguiente y no
+    // el anunciado. Sin ella es un suelo, y "desde" lo dice.
+    const cerrado = ruta.espera_min != null;
+    const partes = [cerrado ? `~${ruta.total_min} min` : `desde ${ruta.total_min} min`];
     if (ruta.andando_min != null) partes.push(`${ruta.andando_min} min andando`);
-    if (ruta.espera_min != null) {
-      partes.push(`próximo ${escaparHtml(ruta.tramos[0].linea)} en ${ruta.espera_min} min`);
+    const linea = escaparHtml(ruta.tramos[0].linea);
+    if (cerrado) {
+      const cual = ruta.aviso_espera === "no_llegas" ? "siguiente" : "próximo";
+      partes.push(`${cual} ${linea} en ${ruta.espera_min} min`);
+    } else if (ruta.espera_max_min != null) {
+      // Sin saber cuándo pasó el último, la frecuencia acota lo que puede tardar.
+      partes.push(`hasta ${ruta.espera_max_min} min de espera`);
     }
-    const cola = incierta
+    if (ruta.espera_transbordo_min != null) {
+      partes.push(`${ruta.espera_transbordo_min} min de transbordo`);
+    }
+    const cola = ruta.aviso_espera
       ? ` <span class="cl-aviso">${AVISOS_ESPERA[ruta.aviso_espera] || ""}</span>`
       : "";
     return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>${cola}`;

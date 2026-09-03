@@ -177,12 +177,164 @@ class TestPuntuar(unittest.TestCase):
         salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 4.0}})
         self.assertEqual(
             set(salida[0]),
-            {"tramos", "total_min", "viaje_min", "espera_min", "andando_min", "aviso_espera"},
+            {"tramos", "total_min", "viaje_min", "espera_min", "espera_max_min",
+             "espera_transbordo_min", "andando_min", "aviso_espera"},
         )
         # El total se redondea entero, no como suma de redondeos: puede bailar un minuto.
         suma = salida[0]["viaje_min"] + salida[0]["espera_min"]
         self.assertLessEqual(abs(salida[0]["total_min"] - suma), 1)
         self.assertEqual(salida[0]["espera_min"], 4)
+
+    HORARIOS = {"A": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
+
+    def test_el_transbordo_usa_el_tiempo_real_de_esa_parada(self):
+        # El servicio da tiempos de cualquier parada, tambien la del transbordo. Si
+        # ahi consta que la C pasa en 15 y llegamos sobre el minuto 1, la espera son
+        # ~14: no la media frecuencia (10), que es lo que se supondria sin ese dato.
+        red = {"A": ["1", "2"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
+        horarios = {"C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"},
+                  {"linea": "C", "subir": "2", "bajar": "3"}]]
+        salida = ranking.puntuar(
+            rutas, red, paradas, {"1": {"A": 0.0}, "2": {"C": 15.0}},
+            horarios=horarios, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        self.assertEqual(salida[0]["espera_transbordo_min"], 14)
+
+    def test_si_el_bus_del_transbordo_se_escapa_se_coge_el_siguiente(self):
+        # Llegamos sobre el minuto 1 y la C acaba de pasar (en 0): se coge la de 20.
+        red = {"A": ["1", "2"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
+        horarios = {"C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"},
+                  {"linea": "C", "subir": "2", "bajar": "3"}]]
+        salida = ranking.puntuar(
+            rutas, red, paradas, {"1": {"A": 0.0}, "2": {"C": 0.0}},
+            horarios=horarios, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        self.assertEqual(salida[0]["espera_transbordo_min"], 19)
+
+    def test_un_transbordo_cuesta_media_frecuencia(self):
+        # Al bajarte no sabes en que punto del horario de la otra linea caes: una linea
+        # cada 20 minutos son 10 de espera esperable, y eso entra en el total.
+        red = {"A": ["1", "2"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
+        horarios = {
+            "A": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}},
+            "C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}},
+        }
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"},
+                  {"linea": "C", "subir": "2", "bajar": "3"}]]
+        salida = ranking.puntuar(
+            rutas, red, paradas, {}, horarios=horarios, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        self.assertEqual(salida[0]["espera_transbordo_min"], 10)
+
+    def test_sin_frecuencia_el_transbordo_tampoco_es_gratis(self):
+        red = {"A": ["1", "2"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"},
+                  {"linea": "C", "subir": "2", "bajar": "3"}]]
+        salida = ranking.puntuar(rutas, red, paradas, {})
+        self.assertEqual(salida[0]["espera_transbordo_min"], ranking.ESPERA_TRANSBORDO_MIN)
+
+    def test_sin_transbordos_no_se_penaliza(self):
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {})
+        self.assertIsNone(salida[0]["espera_transbordo_min"])
+
+    def test_a_igualdad_de_tiempo_gana_la_de_menos_transbordos(self):
+        red = {"A": ["1", "2", "3"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.9655), "3": (38.880, -6.965)}
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "2"},
+             {"linea": "C", "subir": "2", "bajar": "3"}],
+            [{"linea": "A", "subir": "1", "bajar": "3"}],
+        ]
+        salida = ranking.puntuar(rutas, red, paradas, {})
+        self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
+
+    def test_no_ofrece_una_ruta_mas_larga_que_empieza_igual(self):
+        # Si la A sola te deja en el destino, "A y luego C" llega mas tarde al mismo
+        # sitio: no es una alternativa, es la misma ruta con un bus de propina.
+        red = {"A": ["1", "2", "3"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.966), "3": (38.880, -6.965)}
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "3"}],
+            [{"linea": "A", "subir": "1", "bajar": "2"},
+             {"linea": "C", "subir": "2", "bajar": "3"}],
+        ]
+        salida = ranking.puntuar(rutas, red, paradas, {})
+        self.assertEqual(len(salida), 1)
+        self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
+
+    def test_una_linea_parada_no_desplaza_a_una_que_circula(self):
+        # La A no pasa a esa hora y la C si. Aunque la A saliera mejor por tiempo, no
+        # es una alternativa: la que se puede coger va primero.
+        horarios = {
+            "A": {"LV": {"desde": "07:00", "hasta": "15:00", "frecuencia_min": 20}},
+            "C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}},
+        }
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "2"}],
+            [{"linea": "C", "subir": "1", "bajar": "2"}],
+        ]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {"1": {"A": 5.0, "C": 5.0}},
+            horarios=horarios, tipo_dia="LV", ahora_min=19 * 60,
+        )
+        self.assertEqual([r["tramos"][0]["linea"] for r in salida], ["C"])
+
+    def test_si_no_circula_ninguna_se_muestran_igual(self):
+        # Devolver lista vacia diria "no hay ruta", y es falso: la hay, pero no ahora.
+        horarios = {"A": {"LV": {"desde": "07:00", "hasta": "15:00", "frecuencia_min": 20}}}
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {}, horarios=horarios,
+            tipo_dia="LV", ahora_min=19 * 60,
+        )
+        self.assertEqual(salida[0]["aviso_espera"], "fuera_de_servicio")
+
+    def test_con_frecuencia_se_sabe_cuando_pasa_el_siguiente(self):
+        # 0.9 km son ~15.6 min andando, y el bus anunciado pasa en 3: se escapa. Pero
+        # la linea va cada 20, asi que el siguiente pasa en 23 y ya estas alli desde el
+        # 15.6: la espera son los ~7 minutos que van de uno a otro.
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {"1": {"A": 3.0}}, andando_origen={"1": 0.9},
+            horarios=self.HORARIOS, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        self.assertEqual(salida[0]["aviso_espera"], "no_llegas")
+        self.assertEqual(salida[0]["espera_min"], 7)
+
+    def test_sin_dato_la_frecuencia_acota_la_espera(self):
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {},
+            horarios=self.HORARIOS, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        self.assertEqual(salida[0]["aviso_espera"], "sin_datos")
+        self.assertIsNone(salida[0]["espera_min"])
+        self.assertEqual(salida[0]["espera_max_min"], 20)
+
+    def test_fuera_de_horario_no_es_falta_de_datos(self):
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {},
+            horarios=self.HORARIOS, tipo_dia="LV", ahora_min=23 * 60 + 40,
+        )
+        self.assertEqual(salida[0]["aviso_espera"], "fuera_de_servicio")
+
+    def test_sin_horarios_se_comporta_como_antes(self):
+        # Quien clone el repo no tiene el fichero: la espera queda desconocida.
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, self.RED, self.PARADAS, {"1": {"A": 3.0}}, andando_origen={"1": 0.9},
+        )
+        self.assertEqual(salida[0]["aviso_espera"], "no_llegas")
+        self.assertIsNone(salida[0]["espera_min"])
+        self.assertIsNone(salida[0]["espera_max_min"])
 
     def test_un_bus_que_pasa_antes_de_llegar_no_cuenta_como_espera(self):
         # 0.9 km andando son ~15 min: un bus en 3 no se coge. Y cuándo pasa el
@@ -248,19 +400,53 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(
             salida,
             [{"tramos": rutas[0], "total_min": None, "viaje_min": None,
-              "espera_min": None, "andando_min": None, "aviso_espera": None}],
+              "espera_min": None, "espera_max_min": None,
+              "espera_transbordo_min": None,
+              "andando_min": None, "aviso_espera": None}],
         )
 
     def test_respeta_el_limite(self):
-        # Cada ruta con su línea y su parada de subida, para que no las una ninguna
-        # regla de fusión: aquí se comprueba el recorte, no el deduplicado.
+        # Alternativas de verdad: cuanto mas lejos queda la parada del destino mas dura
+        # el viaje, pero menos hay que andar para llegar a ella. Ninguna gana a otra en
+        # todo, asi que ninguna se descarta por dominada y solo actua el recorte.
         cuantas = ranking.LIMITE_RUTAS + 3
+        km_por_grado = 86.7                      # a esta latitud
+        destino = (38.880, -6.960)
+        paradas = {"2": destino}
+        andando = {}
+        for i in range(cuantas):
+            viaje_km = (5 + 3 * i) / 3.9         # el viaje crece con i
+            paradas[f"s{i}"] = (38.880, destino[1] - viaje_km / km_por_grado)
+            andando[f"s{i}"] = ((7 - i) / 17.3)  # y la caminata mengua
         red = {f"L{i}": [f"s{i}", "2"] for i in range(cuantas)}
-        paradas = {"2": (38.880, -6.965)}
-        paradas.update({f"s{i}": (38.880, -6.970 + i / 20000) for i in range(cuantas)})
         rutas = [[{"linea": f"L{i}", "subir": f"s{i}", "bajar": "2"}] for i in range(cuantas)]
-        salida = ranking.puntuar(rutas, red, paradas, {})
+        salida = ranking.puntuar(rutas, red, paradas, {}, andando_origen=andando)
         self.assertEqual(len(salida), ranking.LIMITE_RUTAS)
+
+    def test_descarta_la_que_pierde_en_todo(self):
+        # Mas lenta, mas caminata y un transbordo de mas: no hay a quien le convenga.
+        red = {"A": ["1", "3"], "B": ["1", "2"], "C": ["2", "3"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.960)}
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "3"}],
+            [{"linea": "B", "subir": "1", "bajar": "2"},
+             {"linea": "C", "subir": "2", "bajar": "3"}],
+        ]
+        salida = ranking.puntuar(rutas, red, paradas, {})
+        self.assertEqual(len(salida), 1)
+        self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
+
+    def test_no_repite_el_mismo_viaje_con_las_lineas_al_reves(self):
+        # "C2 o 5" y "5 o C2" son el mismo viaje: tras fusionar alternativas, el
+        # conjunto de lineas de cada tramo es identico.
+        red = {"A": ["1", "2"], "C": ["1", "2"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.965)}
+        rutas = [
+            [{"linea": "A", "subir": "1", "bajar": "2"}],
+            [{"linea": "C", "subir": "1", "bajar": "2"}],
+        ]
+        salida = ranking.puntuar(rutas, red, paradas, {})
+        self.assertEqual(len(salida), 1)
 
     def test_no_repite_la_misma_combinacion_de_lineas(self):
         # La misma línea cogida en otra parada es el mismo viaje andando de más,

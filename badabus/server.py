@@ -1,3 +1,5 @@
+import datetime
+import functools
 import json
 import socket
 from concurrent.futures import ThreadPoolExecutor
@@ -6,7 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from badabus import bus_data_api as api
-from badabus import dia, nominatim, planner, ranking
+from badabus import dia, frecuencias, nominatim, planner, ranking
 
 # Solo local por defecto. Para abrirlo a la red, BADABUS_HOST=0.0.0.0 en el .env.
 HOST_POR_DEFECTO = "127.0.0.1"
@@ -125,9 +127,26 @@ class Handler(BaseHTTPRequestHandler):
         # son muchas más y cada una cuesta una petición al servicio.
         esperas = esperas_en_vivo({ruta[0]["subir"] for ruta in rutas if ruta})
         try:
-            rutas = ranking.puntuar(
-                rutas, red, paradas, esperas, andando_origen, andando_destino
+            ahora = datetime.datetime.now()
+            horarios = frecuencias.cargar()
+            ahora_min = ahora.hour * 60 + ahora.minute
+            puntuar = functools.partial(
+                ranking.puntuar, red=red, paradas=paradas,
+                andando_origen=andando_origen, andando_destino=andando_destino,
+                horarios=horarios, tipo_dia=tipo, ahora_min=ahora_min,
             )
+            elegidas = puntuar(rutas, esperas=esperas)
+            # Los tiempos del transbordo se consultan en una segunda vuelta, y solo en
+            # las paradas de las rutas que han sobrevivido: son un puñado, frente a
+            # todas las de las candidatas. Con ellos la espera del transbordo se sabe
+            # en vez de estimarse, asi que se vuelve a puntuar.
+            en_transbordo = {
+                t["subir"] for r in elegidas for t in r["tramos"][1:]
+            } - set(esperas)
+            if en_transbordo:
+                esperas.update(esperas_en_vivo(en_transbordo))
+                elegidas = puntuar(rutas, esperas=esperas)
+            rutas = elegidas
         except (
             OSError,
             ValueError,
@@ -143,6 +162,7 @@ class Handler(BaseHTTPRequestHandler):
                     "total_min": None,
                     "viaje_min": None,
                     "espera_min": None,
+                    "espera_max_min": None,
                     "andando_min": None,
                 }
                 for ruta in rutas[: ranking.LIMITE_RUTAS]
