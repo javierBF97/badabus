@@ -97,21 +97,75 @@ sirve la primera que pase, y saberlo acorta la espera.
 
 ## Lo que no se sabe, no se inventa
 
-El servicio da **una sola llegada por línea y parada**: cuándo pasa el siguiente bus no lo
-dice nadie. Eso obliga a distinguir tres situaciones en lugar de dar siempre un número:
+Esta parte ha ido por pasos, y cada uno salió de comprobar el anterior. Se cuentan todos
+porque el camino explica el resultado mejor que el resultado solo.
 
-- **Se sabe y da tiempo a llegar**: se muestra el total completo, con la espera dentro.
-- **Se sabe pero no da tiempo**: si el bus pasa antes de que termines de andar hasta la
-  parada, ese bus no es el tuyo, y cuándo pasa el siguiente es desconocido.
-- **No hay dato de paso**: igual, la espera no se sabe.
+**Paso 1 — la espera desconocida valía cero.** El total era andar + esperar + viajar, y
+cuando la espera no se sabía se sumaba un cero. Cómodo, y equivocado en una dirección
+concreta: **premiaba a las rutas peor conocidas**, porque no tener dato salía más barato que
+tenerlo.
 
-En los dos últimos casos se muestra **"desde X min"** —el suelo real, andar más bus— y se
-explica por qué. Contar esa espera como cero era lo cómodo, pero premiaba precisamente a las
-rutas peor conocidas: en una consulta real, **el 54 % de las rutas llevaba un total que no se
-sostenía**, y las cuatro primeras que se ofrecían eran todas de ese grupo.
+**Paso 2 — medirlo.** De 216 rutas de una consulta real, 100 tenían un bus que pasaba antes
+de que llegaras andando y 16 no tenían dato ninguno: **el 54 % llevaba un total que no se
+sostenía**, y las cuatro que se ofrecían primero eran todas de ese grupo. El sesgo no era
+teórico, mandaba en la pantalla.
 
-Las rutas se siguen mostrando aunque no llegues al próximo bus. La ruta puede ser buena; lo
-que falta es el dato, y decirlo es más útil que esconderla o que fingir un número.
+**Paso 3 — dejar de afirmar lo que no se sabe.** La espera pasó a tener tres estados en vez
+de un número siempre, y el total a mostrarse como **"desde X min"** —el suelo real, andar más
+bus— cuando no se podía cerrar. Menos vistoso y más cierto. *Esto sigue siendo lo que se ve
+si no hay fichero de frecuencias.*
+
+**Paso 4 — aparecieron las frecuencias.** El operador publica cada cuánto pasa cada línea
+(ver más abajo), y con eso casi todo se cierra:
+
+| Situación | Qué se puede afirmar |
+|---|---|
+| El bus anunciado te da tiempo | El total completo, con su espera |
+| **Se te escapa** | El siguiente va una frecuencia después: espera exacta, avisando de que no coges el primero |
+| **No hay dato de paso** | La espera no se sabe, pero la frecuencia la acota: *"hasta 20 min"* |
+| **La línea ya no circula** | Se dice tal cual, en vez de fingir que falta un dato |
+
+Lo segundo no es una suposición: si se sabe cuándo pasa el que se pierde y cada cuánto van,
+se sabe cuándo pasa el siguiente. Es aritmética sobre dos datos reales.
+
+**Paso 5 — el mismo agujero, un piso más abajo: el transbordo.** Al cerrar la espera de
+salida se hizo evidente que la del transbordo **no se contaba en absoluto**. Bajarse y coger
+otro bus salía gratis, así que aparecían rutas con transbordo por delante de la misma ruta
+sin él, por ganar medio minuto de caminata.
+
+El primer intento fue suponer **media frecuencia**, que es lo esperable al caer en un punto
+cualquiera del horario. Mejor que cero, pero seguía siendo una suposición.
+
+**Paso 6 — no hacía falta suponerla.** El servicio da los tiempos de **cualquier** parada,
+no solo la de origen: en el transbordo también se sabe cuándo pasa la otra línea. Con eso y
+la hora estimada de llegada sale la espera de verdad, y si ese bus se escapa —la llegada es
+una estimación, así que se le exige el mismo margen que a la salida— se salta al siguiente
+sumando la frecuencia.
+
+Preguntar los tiempos de todas las paradas de transbordo costaba **1.135 ms**. Pero solo
+importan las de las rutas que acaban mostrándose, y esas son **un par frente a cuarenta y
+seis**. Así que se consultan **en una segunda vuelta, después de ordenar**: 805 ms en vez de
+1.135, y exacto donde importa. Preguntar menos y saber más.
+
+Media frecuencia queda como respaldo cuando no hay dato en vivo, y una cifra fija cuando
+tampoco hay frecuencia. Cero es la única respuesta que seguro está mal.
+
+**Paso 7 — verificar destapó cuatro fallos, todos de la misma familia.** No contar algo hacía
+parecer mejor a una ruta:
+
+- Una línea **fuera de su horario** salía la primera, por no tener espera que contar, por
+  delante de otra que sí se podía coger. Ahora no se ofrece — salvo que no quede ninguna, y
+  entonces se explica por qué en vez de decir que no hay ruta, que sería falso.
+- Dos líneas se **fusionaban como intercambiables** aunque una no circulara.
+- El filtro de "mucho peor" se medía **contra esa ruta imposible**, y descartaba las buenas
+  por lentas.
+- Una regla descartada por medirla en una sola consulta —"no ofrecer una ruta que es otra más
+  corta con buses de propina"— **sí hacía falta**: apareció en cuanto se probó otro trayecto.
+
+**Paso 8 — y una regla que no necesita opinión.** Si otra ruta llega antes, te hace andar
+menos **y** con menos transbordos, esta no es una alternativa: no hay a quien le convenga.
+Descartarlas no exige decidir cuánto vale un minuto andando frente a uno esperando —eso sería
+opinable—, basta con que otra gane en las tres.
 
 ## Frecuencias de paso
 
