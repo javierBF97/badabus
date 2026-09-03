@@ -15,6 +15,7 @@ LIMITE_RUTAS = 4               # máximo de alternativas devueltas
 VELOCIDAD_ANDANDO_KMH = 4.5    # paso normal
 FACTOR_CALLEJEO = 1.3          # andando tampoco se va en línea recta
 RADIO_PARADAS_KM = 1.0         # tope de cordura al buscar paradas cercanas
+RADIO_TRANSBORDO_KM = 0.3      # hasta donde se anda entre paradas para transbordar
 MARGEN_LLEGADA_MIN = 2         # margen para dar un bus por cogido (andar es estimado)
 ESPERA_TRANSBORDO_MIN = 5      # lo que se supone en un transbordo sin frecuencia conocida
 
@@ -60,6 +61,40 @@ def minutos_andando(km: float) -> float:
     atraviesan edificios.
     """
     return km * FACTOR_CALLEJEO / VELOCIDAD_ANDANDO_KMH * 60
+
+
+def km_entre_tramos(ruta: list, paradas: dict) -> float:
+    """Lo que se anda al transbordar, cuando no se sube donde se bajó.
+
+    Con transbordos entre paradas cercanas el viaje deja de ser solo bus: hay metros a
+    pie en medio, y no contarlos volvería a hacer parecer gratis lo que no lo es.
+    """
+    total = 0.0
+    for anterior, siguiente in zip(ruta, ruta[1:], strict=False):
+        if anterior["bajar"] == siguiente["subir"]:
+            continue
+        a, b = paradas.get(anterior["bajar"]), paradas.get(siguiente["subir"])
+        if a and b:
+            total += distancia_km(a, b)
+    return total
+
+
+def vecindad(paradas: dict, radio_km: float = RADIO_TRANSBORDO_KM) -> dict[str, list]:
+    """Qué paradas se tocan andando: {parada: [(otra, km)]}.
+
+    Es lo contrario de `paradas_cercanas`, que mide desde un punto suelto y recorre
+    todas las paradas en cada llamada. Aquí interesa la red entera de una vez, para
+    poder transbordar sin exigir que las dos líneas paren en el mismo sitio.
+    """
+    ids = list(paradas)
+    vecinas: dict[str, list] = {p: [] for p in ids}
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            km = distancia_km(paradas[a], paradas[b])
+            if km <= radio_km:
+                vecinas[a].append((b, km))
+                vecinas[b].append((a, km))
+    return vecinas
 
 
 def paradas_cercanas(
@@ -240,6 +275,9 @@ def _espera_en_transbordos(
     reloj = desde_min          # minutos desde ahora en que arranca el tramo en curso
     for anterior, tramo in zip(ruta, ruta[1:], strict=False):
         reloj += minutos_viaje([anterior], red, paradas)
+        if anterior["bajar"] != tramo["subir"]:
+            # El transbordo es andando: hay que llegar antes de poder subir.
+            reloj += minutos_andando(km_entre_tramos([anterior, tramo], paradas))
         linea = tramo["linea"]
         intervalo = None
         if horarios and tipo_dia and ahora_min is not None:
@@ -340,7 +378,8 @@ def puntuar(
         subir = ruta[0]["subir"]
         bajar = ruta[-1]["bajar"]
         viaje = minutos_viaje(ruta, red, paradas)
-        km = andando_origen.get(subir, 0.0) + andando_destino.get(bajar, 0.0)
+        km = (andando_origen.get(subir, 0.0) + andando_destino.get(bajar, 0.0)
+              + km_entre_tramos(ruta, paradas))
         andando = minutos_andando(km)
         espera, tope, aviso = _resolver_espera(
             ruta[0]["linea"],

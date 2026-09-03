@@ -117,7 +117,10 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"  ! no se pudo consultar el tipo de día, uso el calendario: {exc}")
                 tipo = dia.tipo_dia_local()
             activas = dias.get(tipo) or {lin for lins in dias.values() for lin in lins}
-            rutas = planner.planificar_muchos(origen_ids, destino_ids, red, activas)
+            rutas = planner.planificar_muchos(
+                origen_ids, destino_ids, red, activas,
+                vecinas=vecinas_de_paradas(paradas),
+            )
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             print(f"  ! error planificando {origen_ids}->{destino_ids}: {exc}")
             self.fail(502, "no se pudo calcular la ruta")
@@ -240,6 +243,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args) -> None:
         pass
+
+
+_VECINAS: dict | None = None
+
+
+def vecinas_de_paradas(paradas: dict) -> dict:
+    """El grafo de paradas que se tocan andando, calculado una sola vez.
+
+    Recorrerlo entero cuesta unos 30 ms y no cambia entre consultas, asi que no tiene
+    sentido rehacerlo en cada peticion.
+    """
+    global _VECINAS
+    if _VECINAS is None:
+        _VECINAS = ranking.vecindad(paradas)
+    return _VECINAS
 
 
 def esperas_en_vivo(paradas: set) -> dict:

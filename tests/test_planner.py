@@ -71,6 +71,45 @@ class TestPlanificar(unittest.TestCase):
         )
 
 
+class TestTransbordoAndando(unittest.TestCase):
+    # A: 1 -> 2      B: 3 -> 4      La 2 y la 3 son paradas distintas pero vecinas.
+    RED_PIE = {"A": ["1", "2"], "B": ["3", "4"], "D": ["2", "9"]}
+    VECINAS = {"2": [("3", 0.1)], "3": [("2", 0.1)]}
+
+    def test_sin_vecinas_no_hay_ruta(self):
+        # Sin el grafo, el transbordo exige la misma parada: 1 -> 4 no existe.
+        self.assertEqual(
+            planner.planificar_muchos(["1"], ["4"], self.RED_PIE, ["A", "B"]), []
+        )
+
+    def test_con_vecinas_se_baja_y_se_anda(self):
+        rutas = planner.planificar_muchos(
+            ["1"], ["4"], self.RED_PIE, ["A", "B"], vecinas=self.VECINAS
+        )
+        self.assertEqual(rutas, [[
+            {"linea": "A", "subir": "1", "bajar": "2"},
+            {"linea": "B", "subir": "3", "bajar": "4"},
+        ]])
+
+    def test_no_se_anda_hacia_atras(self):
+        # La C pasa por 5 antes que por 6: al bajar en 6 no se vuelve andando a la 5.
+        red = {"C": ["5", "6"], "E": ["5", "7"]}
+        vecinas = {"6": [("5", 0.1)], "5": [("6", 0.1)]}
+        self.assertEqual(
+            planner.planificar_muchos(["5"], ["7"], red, ["C", "E"], vecinas=vecinas),
+            [[{"linea": "E", "subir": "5", "bajar": "7"}]],
+        )
+
+    def test_los_transbordos_de_siempre_siguen_saliendo(self):
+        rutas = planner.planificar_muchos(
+            ["1"], ["9"], self.RED_PIE, ["A", "D"], vecinas=self.VECINAS
+        )
+        self.assertEqual(rutas, [[
+            {"linea": "A", "subir": "1", "bajar": "2"},
+            {"linea": "D", "subir": "2", "bajar": "9"},
+        ]])
+
+
 class TestCargarDatos(unittest.TestCase):
     def test_lee_red_y_dias(self):
         with tempfile.TemporaryDirectory() as d:

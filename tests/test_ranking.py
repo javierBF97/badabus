@@ -187,6 +187,33 @@ class TestPuntuar(unittest.TestCase):
 
     HORARIOS = {"A": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
 
+    def test_la_caminata_del_transbordo_entra_en_el_total(self):
+        # Bajar en 2 y andar hasta 3 para coger la B: esos metros son tiempo.
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967),
+                   "3": (38.881, -6.967), "4": (38.881, -6.964)}
+        anda = [{"linea": "A", "subir": "1", "bajar": "2"},
+                {"linea": "B", "subir": "3", "bajar": "4"}]
+        km = ranking.km_entre_tramos(anda, paradas)
+        self.assertGreater(km, 0)
+        self.assertAlmostEqual(km, ranking.distancia_km(paradas["2"], paradas["3"]))
+
+    def test_sin_caminata_entre_tramos_no_suma(self):
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
+        mismo = [{"linea": "A", "subir": "1", "bajar": "2"},
+                 {"linea": "C", "subir": "2", "bajar": "3"}]
+        self.assertEqual(ranking.km_entre_tramos(mismo, paradas), 0.0)
+
+    def test_vecindad_es_simetrica_y_respeta_el_radio(self):
+        paradas = {"a": (38.880, -6.970), "b": (38.8802, -6.970), "lejos": (38.900, -6.970)}
+        vec = ranking.vecindad(paradas, radio_km=0.1)
+        self.assertEqual([p for p, _ in vec["a"]], ["b"])
+        self.assertEqual([p for p, _ in vec["b"]], ["a"])
+        self.assertEqual(vec["lejos"], [])
+
+    def test_una_parada_no_es_vecina_de_si_misma(self):
+        paradas = {"a": (38.880, -6.970), "b": (38.8802, -6.970)}
+        self.assertNotIn("a", [p for p, _ in ranking.vecindad(paradas)["a"]])
+
     def test_el_transbordo_usa_el_tiempo_real_de_esa_parada(self):
         # El servicio da tiempos de cualquier parada, tambien la del transbordo. Si
         # ahi consta que la C pasa en 15 y llegamos sobre el minuto 1, la espera son

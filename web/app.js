@@ -867,6 +867,19 @@
 
   // Un tramo puede tener varias líneas que lo hacen igual: se pintan todas, porque
   // sirve la primera que pase y eso acorta la espera.
+  // Un transbordo puede ser en la misma parada o exigir andar hasta otra cercana.
+  // Decir "transbordo en X" cuando hay que caminar dejaria fuera lo que mas importa.
+  function textoTransbordo(tramo, siguiente) {
+    if (tramo.bajar === siguiente.subir) {
+      return `<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`;
+    }
+    const a = paradaPorId[tramo.bajar];
+    const b = paradaPorId[siguiente.subir];
+    const metros = a && b ? Math.round(haversine(a.lat, a.lon, b.lat, b.lon)) : null;
+    const cuanto = metros != null ? ` (${metros} m)` : "";
+    return `<div class="cl-transbordo">↕ baja en ${escaparHtml(nombreParada(tramo.bajar))} y anda hasta ${escaparHtml(nombreParada(siguiente.subir))}${cuanto}</div>`;
+  }
+
   function chipsDeTramo(tramo) {
     return [tramo.linea, ...(tramo.alternativas || [])]
       .map((linea) => {
@@ -922,7 +935,7 @@
       const partes = [`<div class="cl-ruta-cab">${cabecera}${textoMinutos(ruta)}</div>`];
       tramos.forEach((tramo, i) => {
         partes.push(`<div class="cl-tramo"><span class="cl-lineas">${chipsDeTramo(tramo)}</span><span class="cl-tramo-txt">${escaparHtml(nombreParada(tramo.subir))} → ${escaparHtml(nombreParada(tramo.bajar))}</span></div>`);
-        if (i < tramos.length - 1) partes.push(`<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`);
+        if (i < tramos.length - 1) partes.push(textoTransbordo(tramo, tramos[i + 1]));
       });
       div.innerHTML = partes.join("");
       div.addEventListener("click", () => {

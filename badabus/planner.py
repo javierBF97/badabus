@@ -7,7 +7,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # todas es exponencial y, medido, además empeora el resultado: llena las mejores
 # posiciones con variantes del mismo viaje. Recordar unas pocas es más rápido y
 # deja ver alternativas de verdad.
-CAMINOS_POR_PARADA = 4
+CAMINOS_POR_PARADA = 8
 
 
 def cargar_datos(data_dir: Path = DATA_DIR) -> tuple[dict, dict]:
@@ -32,8 +32,29 @@ def _indexar(red: dict, activas) -> tuple[dict, dict, dict]:
     return seq, por_parada, pos
 
 
+def _puntos_de_subida(parada: str, camino: tuple, vecinas: dict, pos: dict) -> list[str]:
+    """Dónde se puede subir al bajar aquí: esta parada, y las que quedan a un paseo.
+
+    No se anda hacia atrás: si el bus del que acabas de bajar ya había pasado por esa
+    parada, ir hasta ella es deshacer camino. Cruzar la calle sí vale, porque las dos
+    aceras son paradas distintas y a veces el sentido que quieres es el otro.
+    """
+    puntos = [parada]
+    if not vecinas or not camino:
+        return puntos
+    linea = camino[-1]["linea"]
+    aqui = pos.get((linea, parada))
+    for otra, _km in vecinas.get(parada, ()):
+        antes = pos.get((linea, otra))
+        if antes is not None and aqui is not None and antes <= aqui:
+            continue
+        puntos.append(otra)
+    return puntos
+
+
 def planificar_muchos(
-    origenes, destinos, red: dict, activas, max_transbordos: int = 2
+    origenes, destinos, red: dict, activas, max_transbordos: int = 2,
+    vecinas: dict | None = None,
 ) -> list[list[dict]]:
     """Rutas desde cualquiera de `origenes` hasta cualquiera de `destinos`.
 
@@ -50,25 +71,25 @@ def planificar_muchos(
     for _ronda in range(max_transbordos + 1):
         siguiente: dict[str, list] = {}
         for parada, llegadas in etiquetas.items():
-            for lin in por_parada.get(parada, ()):
-                i = pos.get((lin, parada))
-                if i is None:
-                    continue
-                # Nadie coge dos veces la misma línea en un viaje.
-                utiles = [(o, c) for o, c in llegadas if all(t["linea"] != lin for t in c)]
-                if not utiles:
-                    continue
-                for bajada in seq[lin][i + 1:]:
-                    for origen, camino in utiles:
-                        # Volver al punto de partida no es un viaje (líneas circulares).
-                        if origen == bajada:
+            for origen, camino in llegadas:
+                for punto in _puntos_de_subida(parada, camino, vecinas, pos):
+                    for lin in por_parada.get(punto, ()):
+                        # Nadie coge dos veces la misma línea en un viaje.
+                        if any(t["linea"] == lin for t in camino):
                             continue
-                        ruta = (*camino, _tramo(lin, parada, bajada))
-                        if bajada in destinos:
-                            hallado.setdefault((origen, bajada), []).append(list(ruta))
-                        cola = siguiente.setdefault(bajada, [])
-                        if len(cola) < CAMINOS_POR_PARADA:
-                            cola.append((origen, ruta))
+                        i = pos.get((lin, punto))
+                        if i is None:
+                            continue
+                        for bajada in seq[lin][i + 1:]:
+                            # Volver al punto de partida no es un viaje (circulares).
+                            if origen == bajada:
+                                continue
+                            ruta = (*camino, _tramo(lin, punto, bajada))
+                            if bajada in destinos:
+                                hallado.setdefault((origen, bajada), []).append(list(ruta))
+                            cola = siguiente.setdefault(bajada, [])
+                            if len(cola) < CAMINOS_POR_PARADA:
+                                cola.append((origen, ruta))
         etiquetas = siguiente
         if not etiquetas:
             break
