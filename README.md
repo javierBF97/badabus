@@ -213,6 +213,88 @@ vivo, que es más fiable: algunas líneas solo salen ciertos domingos y eso no s
 Se publican como imágenes sin número de versión, así que **caduca sin avisar**. El campo
 `transcrito` guarda la fecha en que se copió.
 
+## Transbordar andando
+
+Un transbordo exigía que las dos líneas parasen **en el mismo sitio**. En la calle no
+funciona así: te bajas, cruzas o andas cincuenta metros, y coges otra línea.
+
+### Primer diseño, y por qué se cayó
+
+La idea inicial era quedarse con **la parada más cercana de cada línea**: una por línea, y a
+otra cosa. Al medirla no se sostenía.
+
+Una sola línea puede tener **diecisiete paradas a menos de un kilómetro**, incluidas las dos
+aceras de la misma calle, que van en sentidos opuestos: quedarse con la más próxima podía
+elegir el sentido contrario. En el destino era peor — sus cuatro paradas servían las mismas
+líneas, así que la regla las reducía a una, y ahí sí importa cuál, porque cambia lo que andas
+al bajar. En total perdía **37 combinaciones de líneas**.
+
+Se descartó antes de escribir nada. Lo que quedó fue lo contrario: no elegir, sino mirarlas
+todas y dejar que el orden decida.
+
+### El grafo de vecindad
+
+Hace falta saber qué paradas se tocan andando. Es **lo contrario de buscar paradas cercanas a
+un punto**: allí se mide desde un sitio suelto y hay que recorrer las 369 en cada llamada;
+aquí interesa la red entera de una vez, y no cambia entre consultas.
+
+Así que se calcula **una sola vez al arrancar**, comparando cada parada con las demás. Son
+unos 30 ms, y el resultado crece rápido con el radio:
+
+| Radio | Pares de paradas vecinas |
+|---|---|
+| 100 m | 154 |
+| 200 m | 427 |
+| 300 m | 906 |
+| 400 m | 1.578 |
+
+### Afinar el radio: medido dos veces
+
+No se eligió a ojo. Se barrieron **cinco radios contra cuatro cupos** sobre pares de origen y
+destino al azar, mirando en cuántos viajes mejoraba el tiempo, en cuántos empeoraba y cuánto
+se ganaba.
+
+La primera vez salió **200 m**. Pero ese barrido comparaba solo **andar + bus**, porque
+entonces no había datos de espera fiables. Al rehacerlo con las esperas dentro, el óptimo se
+movió:
+
+| | Sin esperas | Con esperas |
+|---|---|---|
+| Radio | 200 m | **300 m** |
+| Viajes que mejoran | 47 % | **63 %** |
+| Ganancia mediana | 6,1 min | **8,7 min** |
+
+Tiene sentido: el coste de andar no cambió, pero el premio sí. Andar trescientos metros para
+coger una línea que pasa cada veinte minutos, en vez de una que pasa cada hora y media, ahora
+se paga solo. **400 m no aporta nada sobre 300 y cuesta el doble**, así que el codo es real y
+no una meseta.
+
+Las esperas se modelan como **media frecuencia** para afinar, también la del primer bus, de
+forma que la medición no dependa del minuto en que se lance. En uso real esa primera espera
+sale del dato en vivo.
+
+### Y el cupo, que no es un detalle
+
+Con transbordos a pie salen **seis veces más rutas** compitiendo por las mismas plazas por
+parada. Con el cupo en 4 hay viajes que **empeoran**: las buenas se caen de la lista. Con 8
+desaparecen y la ganancia ya está al máximo; subir a 16 o 32 solo cuesta.
+
+Es la tercera vez que aparece el mismo patrón en este proyecto: **ampliar lo que se busca sin
+ampliar lo que se recuerda empeora el resultado.**
+
+### Las reglas del viaje
+
+**No se anda hacia atrás.** Si el bus del que acabas de bajar ya había pasado por esa parada,
+ir hasta ella es deshacer camino. Cruzar la calle sí vale: las dos aceras son paradas
+distintas y a veces el sentido que quieres es el otro.
+
+**Y esos metros cuentan** — en el total y en el reloj que decide si llegas al segundo bus. Si
+no, volveríamos a hacer parecer gratis lo que no lo es, que es el error que este proyecto
+lleva corrigiendo desde el principio.
+
+Buscar pasa de 44 a **272 ms**. Es el precio de mirar seis veces más rutas, y donde más se
+nota es en las zonas con poca frecuencia, que es justo donde hacía falta.
+
 ## Uso
 `badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
 (`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
