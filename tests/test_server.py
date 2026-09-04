@@ -236,7 +236,9 @@ class TestServer(unittest.TestCase):
         rutas = json.loads(body)["rutas"]
         self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
         self.assertEqual(rutas[0]["espera_min"], 5)
-        self.assertIsNone(rutas[0]["andando_min"])
+        # Eligiendo paradas a mano se miran igual las de al lado, asi que la
+        # caminata existe como concepto: 0 significa que no hay que andar.
+        self.assertEqual(rutas[0]["andando_min"], 0)
 
     def test_plan_con_coordenadas_de_origen(self):
         red = {"A": ["1", "2", "3"]}

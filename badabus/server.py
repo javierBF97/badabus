@@ -287,14 +287,22 @@ def resolver_extremo(
 ) -> tuple[list[str], dict[str, float]]:
     """De los parámetros de un extremo a (paradas candidatas, {id: km andando}).
 
-    Acepta `<prefijo>=<id>` o `<prefijo>_lat` + `<prefijo>_lon`. Con un id no hay
-    caminata que contar. Lanza ValueError si los parámetros no valen.
+    Acepta `<prefijo>=<id>` o `<prefijo>_lat` + `<prefijo>_lon`. En los dos casos se
+    miran también las paradas de alrededor: elegir una parada a mano no significa
+    querer *esa* y ninguna otra, y a veces la de al lado tiene una línea que va mucho
+    mejor. La elegida queda a cero metros, así que no se le cuenta caminata.
+
+    Lanza ValueError si los parámetros no valen.
     """
     ident = (params.get(prefijo) or [""])[0]
     if ident:
         if not ident.isdigit():
             raise ValueError(f"{prefijo} debe ser un id de parada")
-        return [ident], {}
+        aqui = paradas.get(ident)
+        if aqui is None:
+            return [ident], {}
+        cercanas = ranking.paradas_cercanas(aqui[0], aqui[1], paradas)
+        return [p for p, _ in cercanas], {p: km for p, km in cercanas}
     lat = (params.get(f"{prefijo}_lat") or [""])[0]
     lon = (params.get(f"{prefijo}_lon") or [""])[0]
     if not lat or not lon:
