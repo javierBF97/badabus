@@ -350,6 +350,21 @@ button:hover {
   border-radius: 8px;
 }
 
+/* Invertir origen y destino: entre los dos campos y pegado a la derecha, para no
+   mover las etiquetas de sitio ni quitarle ancho al campo que se esta escribiendo. */
+.cl-invertir {
+  display: block;
+  margin: -6px 0 10px auto;
+  padding: 4px 10px;
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+
+.cl-invertir:hover {
+  color: var(--text);
+}
+
 .cl-buscar-ruta {
   width: 100%;
   background: var(--accent);
@@ -441,6 +456,13 @@ body.ruta-activa #locate {
 /* Con una ruta activa, el scrim no debe tapar el mapa (o las paradas no se pueden clicar). */
 body.ruta-activa #scrim-comollegar {
   display: none;
+}
+
+#lang-toggle {
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 #theme-toggle {

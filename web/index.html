@@ -11,6 +11,13 @@
         ? guardado
         : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro");
       document.documentElement.dataset.theme = tema;
+      // El idioma tambien antes de pintar: si no, los textos salen en castellano y
+      // saltan a ingles al arrancar el script.
+      var idioma = localStorage.getItem("idioma");
+      if (idioma !== "es" && idioma !== "en") {
+        idioma = String(navigator.language || "es").toLowerCase().startsWith("en") ? "en" : "es";
+      }
+      document.documentElement.lang = idioma;
     })();
   </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -23,17 +30,21 @@
   <header>
     <div class="wordmark"><span class="dot"></span>badabus</div>
     <div class="busqueda">
-      <input id="buscar-parada" type="text" placeholder="Buscar parada…" aria-label="Buscar parada"
+      <input id="buscar-parada" type="text" placeholder="Buscar parada…" data-i18n-ph="buscar_parada_ph"
+        aria-label="Buscar parada" data-i18n-aria="buscar_parada_aria"
         autocomplete="off" role="combobox" aria-expanded="false" aria-controls="resultados-busqueda" aria-autocomplete="list">
       <div id="resultados-busqueda" role="listbox" hidden></div>
     </div>
     <div class="acciones">
-      <button id="btn-comollegar" type="button" aria-haspopup="true" aria-expanded="false">Cómo llegar</button>
+      <button id="btn-comollegar" type="button" aria-haspopup="true" aria-expanded="false" data-i18n="como_llegar">Cómo llegar</button>
       <button id="btn-lineas" type="button" aria-haspopup="true" aria-expanded="false">
         <span class="btn-chip" id="btn-chip" style="display:none"></span>
-        <span id="btn-texto">Líneas</span>
+        <span id="btn-texto" data-i18n="lineas">Líneas</span>
       </button>
-      <button id="locate" type="button">Parada más cercana</button>
+      <button id="locate" type="button" data-i18n="parada_cercana">Parada más cercana</button>
+      <button id="lang-toggle" type="button" aria-label="View in English" data-i18n-aria="cambiar_idioma">
+        <span id="lang-texto">EN</span>
+      </button>
       <button id="theme-toggle" type="button" aria-label="Cambiar tema" aria-pressed="false">
         <span class="icono-sol" aria-hidden="true">&#9728;</span>
         <span class="icono-luna" aria-hidden="true">&#9789;</span>
@@ -45,28 +56,29 @@
   </main>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <div id="scrim-lineas" hidden></div>
-  <aside id="panel-lineas" hidden role="dialog" aria-modal="true" aria-label="Elegir línea">
+  <aside id="panel-lineas" hidden role="dialog" aria-modal="true" aria-label="Elegir línea" data-i18n-aria="elegir_linea">
     <div class="panel-lineas-cabecera">
-      <span>Elige una línea</span>
-      <button type="button" id="cerrar-lineas" aria-label="Cerrar">&times;</button>
+      <span data-i18n="elige_linea">Elige una línea</span>
+      <button type="button" id="cerrar-lineas" aria-label="Cerrar" data-i18n-aria="cerrar">&times;</button>
     </div>
     <div id="chips-lineas"></div>
   </aside>
   <div id="scrim-comollegar" hidden></div>
-  <aside id="panel-comollegar" hidden role="dialog" aria-modal="true" aria-label="Cómo llegar">
+  <aside id="panel-comollegar" hidden role="dialog" aria-modal="true" aria-label="Cómo llegar" data-i18n-aria="como_llegar">
     <div class="panel-lineas-cabecera">
-      <span>Cómo llegar</span>
-      <button type="button" id="cerrar-comollegar" aria-label="Cerrar">&times;</button>
+      <span data-i18n="como_llegar">Cómo llegar</span>
+      <button type="button" id="cerrar-comollegar" aria-label="Cerrar" data-i18n-aria="cerrar">&times;</button>
     </div>
     <div class="cl-campo">
-      <div class="cl-label">Origen</div>
+      <div class="cl-label" data-i18n="origen">Origen</div>
       <div id="cl-origen"></div>
     </div>
+    <button type="button" id="cl-invertir" class="cl-invertir" aria-label="Invertir origen y destino" data-i18n-aria="invertir">⇅</button>
     <div class="cl-campo">
-      <div class="cl-label">Destino</div>
+      <div class="cl-label" data-i18n="destino">Destino</div>
       <div id="cl-destino"></div>
     </div>
-    <button type="button" id="cl-buscar" class="cl-buscar-ruta">Buscar ruta</button>
+    <button type="button" id="cl-buscar" class="cl-buscar-ruta" data-i18n="buscar_ruta">Buscar ruta</button>
     <div id="cl-resultados"></div>
   </aside>
 </body>

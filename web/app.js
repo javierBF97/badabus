@@ -10,9 +10,9 @@
   // Por qué no se puede dar un total cerrado. Nunca se inventa la espera del
   // siguiente bus: el servicio solo da una llegada por línea.
   const AVISOS_ESPERA = {
-    no_llegas: "no te da tiempo a coger el próximo",
-    sin_datos: "sin datos de paso ahora mismo",
-    fuera_de_servicio: "esa línea ya no pasa a estas horas",
+    no_llegas: "aviso_no_llegas",
+    sin_datos: "aviso_sin_datos",
+    fuera_de_servicio: "aviso_fuera_de_servicio",
   };
   const BUSQUEDA_MIN_CARACTERES = 3;
   const BUSQUEDA_ESPERA_MS = 200;
@@ -49,6 +49,10 @@
   let destinoSel = null;
   let modoMapa = null;
   let rutaActiva = null;
+  let limitesEncuadre = null;
+  let encuadreAutomatico = true;
+  let encuadrando = false;
+  let pendienteEncuadre = false;
 
   // ---------- Tema ----------
 
@@ -73,12 +77,220 @@
     return claveMapa ? `${base}?key=${encodeURIComponent(claveMapa)}` : base;
   }
 
+
+  // ---------- Idioma ----------
+
+  // Diccionario plano, clave -> texto. Las piezas variables van entre llaves y las
+  // sustituye t(): asi una frase puede ordenarse distinto en cada idioma, que es
+  // justo lo que no deja hacer ir concatenando trozos sueltos.
+  // Los nombres de paradas y calles no se traducen: son datos, y en Badajoz la calle
+  // se llama igual en los dos idiomas.
+  const TEXTOS = {
+    es: {
+      buscar_parada_ph: "Buscar parada…",
+      buscar_parada_aria: "Buscar parada",
+      como_llegar: "Cómo llegar",
+      lineas: "Líneas",
+      parada_cercana: "Parada más cercana",
+      // El boton lleva al *otro* idioma, asi que su etiqueta va en ese otro idioma.
+      cambiar_idioma: "View in English",
+      tema_claro: "Activar modo claro",
+      tema_oscuro: "Activar modo oscuro",
+      elegir_linea: "Elegir línea",
+      elige_linea: "Elige una línea",
+      cerrar: "Cerrar",
+      origen: "Origen",
+      destino: "Destino",
+      invertir: "Invertir origen y destino",
+      buscar_ruta: "Buscar ruta",
+      todas: "Todas",
+      quitar: "Quitar",
+      parada_o_direccion_ph: "Parada o dirección…",
+      buscar_origen_aria: "Buscar parada o dirección de origen",
+      buscar_destino_aria: "Buscar parada o dirección de destino",
+      en_el_mapa: "En el mapa",
+      mas_cercana: "Más cercana",
+      direcciones: "Direcciones",
+      paradas: "Paradas",
+      buscando_direcciones: "Buscando direcciones…",
+      cargando: "Cargando…",
+      sin_llegadas: "Sin llegadas próximas.",
+      error_tiempos: "No se pudieron cargar los tiempos",
+      reintentar: "Reintentar",
+      llegada_ya: "Próximo",
+      sin_geo: "La geolocalización no está disponible en este dispositivo.",
+      buscando_ubicacion: "Buscando tu ubicación…",
+      sin_parada_cerca: "No se encontró ninguna parada cercana.",
+      sin_ubicacion: "No se pudo obtener tu ubicación.",
+      parada_sin_mapa: "Esa parada no tiene ubicación en el mapa.",
+      toca_origen: "Toca la parada de origen en el mapa",
+      toca_destino: "Toca la parada de destino en el mapa",
+      elige_extremos: "Elige origen y destino.",
+      buscando_ruta: "Buscando ruta…",
+      fuera_de_red: "Esa dirección no tiene paradas cerca.",
+      sin_datos_paradas: "Faltan los datos de paradas. Recarga la página.",
+      error_ruta: "No se pudo calcular la ruta.",
+      sin_ruta: "No se encontró ruta (prueba con otras paradas).",
+      error_datos_mapa: "No se pudieron cargar los datos del mapa. Recarga la página.",
+      transbordo_en: "↕ transbordo en {parada}",
+      baja_y_anda: "↕ baja en {a} y anda hasta {b}{cuanto}",
+      directo: "Directo",
+      transbordo_1: "1 transbordo",
+      transbordos_n: "{n} transbordos",
+      total_aprox: "~{n} min",
+      total_desde: "desde {n} min",
+      min_andando: "{n} min andando",
+      proximo_linea: "próximo {linea} en {n} min",
+      siguiente_linea: "siguiente {linea} en {n} min",
+      espera_max: "hasta {n} min de espera",
+      espera_transbordo: "{n} min de transbordo",
+      aviso_no_llegas: "no te da tiempo a coger el próximo",
+      aviso_sin_datos: "sin datos de paso ahora mismo",
+      aviso_fuera_de_servicio: "esa línea ya no pasa a estas horas",
+      apie_gana: "Andando, y llegas antes",
+      apie_alternativa: "O puedes ir andando",
+    },
+    en: {
+      buscar_parada_ph: "Search stop…",
+      buscar_parada_aria: "Search stop",
+      como_llegar: "Directions",
+      lineas: "Lines",
+      parada_cercana: "Nearest stop",
+      cambiar_idioma: "Ver en español",
+      tema_claro: "Switch to light mode",
+      tema_oscuro: "Switch to dark mode",
+      elegir_linea: "Choose line",
+      elige_linea: "Choose a line",
+      cerrar: "Close",
+      origen: "From",
+      destino: "To",
+      invertir: "Swap start and destination",
+      buscar_ruta: "Find route",
+      todas: "All",
+      quitar: "Remove",
+      parada_o_direccion_ph: "Stop or address…",
+      buscar_origen_aria: "Search starting stop or address",
+      buscar_destino_aria: "Search destination stop or address",
+      en_el_mapa: "On the map",
+      mas_cercana: "Nearest",
+      direcciones: "Addresses",
+      paradas: "Stops",
+      buscando_direcciones: "Searching addresses…",
+      cargando: "Loading…",
+      sin_llegadas: "No arrivals due.",
+      error_tiempos: "Could not load arrival times",
+      reintentar: "Try again",
+      llegada_ya: "Due",
+      sin_geo: "Location is not available on this device.",
+      buscando_ubicacion: "Finding your location…",
+      sin_parada_cerca: "No stop found nearby.",
+      sin_ubicacion: "Could not get your location.",
+      parada_sin_mapa: "That stop has no place on the map.",
+      toca_origen: "Tap the starting stop on the map",
+      toca_destino: "Tap the destination stop on the map",
+      elige_extremos: "Choose where you start and where you are going.",
+      buscando_ruta: "Finding a route…",
+      fuera_de_red: "That address has no stops nearby.",
+      sin_datos_paradas: "The stop data is missing. Reload the page.",
+      error_ruta: "Could not work out a route.",
+      sin_ruta: "No route found (try other stops).",
+      error_datos_mapa: "Could not load the map data. Reload the page.",
+      transbordo_en: "↕ change at {parada}",
+      baja_y_anda: "↕ get off at {a} and walk to {b}{cuanto}",
+      directo: "Direct",
+      transbordo_1: "1 change",
+      transbordos_n: "{n} changes",
+      total_aprox: "~{n} min",
+      total_desde: "from {n} min",
+      min_andando: "{n} min walking",
+      proximo_linea: "next {linea} in {n} min",
+      siguiente_linea: "the {linea} after that in {n} min",
+      espera_max: "up to {n} min waiting",
+      espera_transbordo: "{n} min to change",
+      aviso_no_llegas: "you cannot make the next one",
+      aviso_sin_datos: "no arrival data right now",
+      aviso_fuera_de_servicio: "that line no longer runs at this hour",
+      apie_gana: "On foot, and you get there sooner",
+      apie_alternativa: "Or you can walk",
+    },
+  };
+
+  let idioma = idiomaGuardado();
+  let ultimasRutas = null;
+  let ultimoAPie = null;
+
+  function idiomaGuardado() {
+    const guardado = localStorage.getItem("idioma");
+    if (guardado === "es" || guardado === "en") return guardado;
+    return String(navigator.language || "es").toLowerCase().startsWith("en") ? "en" : "es";
+  }
+
+  function t(clave, datos) {
+    const tabla = TEXTOS[idioma] || TEXTOS.es;
+    let texto = tabla[clave] != null ? tabla[clave] : TEXTOS.es[clave];
+    if (texto == null) return clave;
+    if (datos) {
+      for (const nombre of Object.keys(datos)) {
+        texto = texto.replaceAll("{" + nombre + "}", datos[nombre]);
+      }
+    }
+    return texto;
+  }
+
+  // El servicio devuelve su texto de llegada en castellano ("PRÓXIMO", "5 min"). En
+  // ingles se reescribe a partir de los minutos, que es el unico dato que lleva dentro;
+  // si no se entienden, se deja tal cual antes que inventarse otra cosa.
+  function textoLlegada(tiempo) {
+    const bruto = String(tiempo || "");
+    if (idioma === "es" || !bruto) return bruto;
+    const minutos = minutosDe(bruto);
+    if (minutos === 0) return t("llegada_ya");
+    return Number.isFinite(minutos) ? minutos + " min" : bruto;
+  }
+
+  function aplicarIdioma(nuevo) {
+    idioma = nuevo;
+    document.documentElement.lang = idioma;
+    localStorage.setItem("idioma", idioma);
+    for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
+    for (const el of document.querySelectorAll("[data-i18n-aria]")) {
+      el.setAttribute("aria-label", t(el.dataset.i18nAria));
+    }
+    for (const el of document.querySelectorAll("[data-i18n-ph]")) el.placeholder = t(el.dataset.i18nPh);
+    // El boton ensena el idioma al que lleva, no en el que se esta.
+    const chip = document.getElementById("lang-texto");
+    if (chip) chip.textContent = idioma === "es" ? "EN" : "ES";
+    const toggle = document.getElementById("theme-toggle");
+    if (toggle) {
+      const oscuro = document.documentElement.dataset.theme === "oscuro";
+      toggle.setAttribute("aria-label", t(oscuro ? "tema_claro" : "tema_oscuro"));
+    }
+    repintarLoDinamico();
+  }
+
+  // Lo que se pinta desde JS no lleva data-i18n, asi que hay que rehacerlo. Se hace
+  // solo con lo que hay en pantalla: sin ruta buscada no hay resultados que rehacer.
+  function repintarLoDinamico() {
+    const texto = document.getElementById("btn-texto");
+    if (texto && lineaSeleccionada) texto.textContent = lineaSeleccionada;
+    const panel = document.getElementById("panel-comollegar");
+    if (panel && !panel.hidden) {
+      renderSelector("origen");
+      renderSelector("destino");
+    }
+    if (ultimasRutas) renderRutas(ultimasRutas, ultimoAPie);
+    if (paradaActual && ultimasLlegadas) {
+      const filas = filasLlegadas(ultimasLlegadas);
+      actualizarPopup(paradaActual, filas || `<div class="popup-estado">${t("sin_llegadas")}</div>`);
+    }
+  }
+
   function aplicarTema(tema) {
     document.documentElement.dataset.theme = tema;
     const toggle = document.getElementById("theme-toggle");
     if (toggle) {
       toggle.setAttribute("aria-pressed", tema === "oscuro" ? "true" : "false");
-      toggle.setAttribute("aria-label", tema === "oscuro" ? "Activar modo claro" : "Activar modo oscuro");
+      toggle.setAttribute("aria-label", t(tema === "oscuro" ? "tema_claro" : "tema_oscuro"));
     }
     if (map) {
       if (capaTiles) map.removeLayer(capaTiles);
@@ -174,12 +386,16 @@
   // ---------- Mapa y datos ----------
 
   function crearMapa() {
-    map = L.map("map").setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
+    // zoomSnap por cuartos: con niveles enteros el encuadre se queda hasta la mitad
+    // de corto, porque coge el último nivel que cabe entero. Los botones + y - siguen
+    // yendo de uno en uno (zoomDelta).
+    map = L.map("map", { zoomSnap: 0.25 }).setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
     capaTrazado = L.layerGroup().addTo(map);
     capaRuta = L.layerGroup().addTo(map);
     capaMarcadores = L.layerGroup().addTo(map);
     map.on("popupclose", alCerrarPopup);
     map.on("click", alClicarElMapa);
+    vigilarElHueco();
   }
 
   function alCerrarPopup(evento) {
@@ -258,7 +474,10 @@
     if (lineaVistazo && lineaVistazo !== lineaSeleccionada) dibujarRutaEn(grupo, lineaVistazo);
     if (!grupo.getLayers().length) return;
     grupo.addTo(capaTrazado);
-    if (!lineaVistazo && lineaSeleccionada) map.fitBounds(grupo.getBounds(), { padding: [30, 30] });
+    if (!lineaVistazo && lineaSeleccionada) {
+      encuadreAutomatico = true;
+      encuadrar(grupo.getBounds());
+    }
   }
 
   function dibujarRutaEn(grupo, codigo) {
@@ -334,7 +553,7 @@
           <div class="fila-llegada${seleccionada ? " resaltada" : ""}"${estilo}>
             <span class="${claseChip}"${dataLinea} style="background:${color};color:${textoSobre(color)}">${escaparHtml(codigo)}</span>
             <span class="fila-destino"><span class="destino-texto">${escaparHtml(destino)}</span></span>
-            <span class="fila-tiempo">${escaparHtml(llegada.tiempo || "")}</span>
+            <span class="fila-tiempo">${escaparHtml(textoLlegada(llegada.tiempo))}</span>
           </div>`;
       })
       .join("");
@@ -387,7 +606,7 @@
   }
 
   function cuerpoError() {
-    return '<div class="popup-estado">No se pudieron cargar los tiempos <button type="button" class="reintentar">Reintentar</button></div>';
+    return `<div class="popup-estado">${t("error_tiempos")} <button type="button" class="reintentar">${t("reintentar")}</button></div>`;
   }
 
   async function seleccionarParada(parada) {
@@ -402,7 +621,7 @@
     ultimasLlegadas = null;
     const idPeticion = ++peticionActual;
     if (lineaSeleccionada) refrescarMarcadores();
-    mostrarPopup(parada, '<div class="popup-estado">Cargando…</div>');
+    mostrarPopup(parada, `<div class="popup-estado">${t("cargando")}</div>`);
     try {
       const resp = await fetch(`/api/parada/${encodeURIComponent(parada.id)}`);
       if (idPeticion !== peticionActual) return;
@@ -418,7 +637,7 @@
       }
       ultimasLlegadas = llegadas;
       const filas = filasLlegadas(llegadas);
-      actualizarPopup(parada, filas || '<div class="popup-estado">Sin llegadas próximas.</div>');
+      actualizarPopup(parada, filas || `<div class="popup-estado">${t("sin_llegadas")}</div>`);
     } catch (err) {
       if (idPeticion === peticionActual) actualizarPopup(parada, cuerpoError());
     }
@@ -451,7 +670,7 @@
     const todas = document.createElement("button");
     todas.type = "button";
     todas.className = "chip-linea-btn todas";
-    todas.textContent = "Todas";
+    todas.textContent = t("todas");
     todas.addEventListener("click", () => seleccionarLinea(""));
     contenedor.appendChild(todas);
     // Sin datos del día (ausente o lista vacía) se pintan todas: nunca se esconde una línea por un fallo.
@@ -479,7 +698,7 @@
     dibujarTrazado();
     if (paradaActual && ultimasLlegadas) {
       const filas = filasLlegadas(ultimasLlegadas);
-      actualizarPopup(paradaActual, filas || '<div class="popup-estado">Sin llegadas próximas.</div>');
+      actualizarPopup(paradaActual, filas || `<div class="popup-estado">${t("sin_llegadas")}</div>`);
     }
     cerrarLineas();
   }
@@ -500,7 +719,7 @@
       texto.textContent = lineaSeleccionada;
     } else {
       chip.style.display = "none";
-      texto.textContent = "Líneas";
+      texto.textContent = t("lineas");
     }
   }
 
@@ -524,22 +743,22 @@
 
   function localizarParadaMasCercana() {
     if (!navigator.geolocation) {
-      mostrarAviso("La geolocalización no está disponible en este dispositivo.");
+      mostrarAviso(t("sin_geo"));
       return;
     }
-    mostrarAviso("Buscando tu ubicación…");
+    mostrarAviso(t("buscando_ubicacion"));
     navigator.geolocation.getCurrentPosition(
       (posicion) => {
         const { latitude, longitude } = posicion.coords;
         const cercana = paradaMasCercana(latitude, longitude, paradas);
         if (!cercana) {
-          mostrarAviso("No se encontró ninguna parada cercana.");
+          mostrarAviso(t("sin_parada_cerca"));
           return;
         }
         map.setView([cercana.lat, cercana.lon], 16);
         seleccionarParada(cercana);
       },
-      () => mostrarAviso("No se pudo obtener tu ubicación.")
+      () => mostrarAviso(t("sin_ubicacion"))
     );
   }
 
@@ -592,7 +811,7 @@
     document.getElementById("buscar-parada").value = parada.nombre;
     ocultarResultados();
     if (!coordsValidas(parada)) {
-      mostrarAviso("Esa parada no tiene ubicación en el mapa.");
+      mostrarAviso(t("parada_sin_mapa"));
       return;
     }
     map.setView([parada.lat, parada.lon], 16);
@@ -611,17 +830,40 @@
     renderSelector("destino");
   }
 
+  // Invertir es un caso de todos los dias: se mira la ida y acto seguido la vuelta.
+  // Sin boton hay que reescribir los dos extremos a mano.
+  function invertirExtremos() {
+    const antes = origenSel;
+    origenSel = destinoSel;
+    destinoSel = antes;
+    renderSelector("origen");
+    renderSelector("destino");
+    if (origenSel && destinoSel) {
+      buscarRuta();
+      return;
+    }
+    // Con un extremo suelto, lo que hay en pantalla ya no es de este viaje.
+    limpiarResultados();
+  }
+
+  function limpiarResultados() {
+    ultimasRutas = null;
+    ultimoAPie = null;
+    rutaActiva = null;
+    limitesEncuadre = null;
+    document.getElementById("cl-resultados").innerHTML = "";
+    document.body.classList.remove("ruta-activa");
+    capaRuta.clearLayers();
+    refrescarMarcadores();
+  }
+
   function cerrarComoLlegar() {
     document.getElementById("panel-comollegar").hidden = true;
     document.getElementById("scrim-comollegar").hidden = true;
     document.getElementById("btn-comollegar").setAttribute("aria-expanded", "false");
     origenSel = null;
     destinoSel = null;
-    rutaActiva = null;
-    document.body.classList.remove("ruta-activa");
-    document.getElementById("cl-resultados").innerHTML = "";
-    capaRuta.clearLayers();
-    refrescarMarcadores();
+    limpiarResultados();
   }
 
   function nombreParada(id) {
@@ -652,7 +894,7 @@
         <div class="cl-elegida">
           <span class="cl-punto"></span>
           <span class="cl-nombre">${escaparHtml(sel.nombre)}</span>
-          <button type="button" class="cl-quitar" aria-label="Quitar">&times;</button>
+          <button type="button" class="cl-quitar" aria-label="${t("quitar")}">&times;</button>
         </div>`;
       cont.querySelector(".cl-quitar").addEventListener("click", () => {
         if (campo === "origen") origenSel = null;
@@ -663,12 +905,12 @@
     }
     cont.innerHTML = `
       <div class="cl-buscar-campo">
-        <input type="text" class="cl-input" placeholder="Parada o dirección…" aria-label="Buscar parada o dirección de ${campo}" autocomplete="off">
+        <input type="text" class="cl-input" placeholder="${t("parada_o_direccion_ph")}" aria-label="${t(campo === "origen" ? "buscar_origen_aria" : "buscar_destino_aria")}" autocomplete="off">
         <div class="cl-resultados-busq" hidden></div>
       </div>
       <div class="cl-modos">
-        <button type="button" class="cl-modo" data-modo="mapa">En el mapa</button>
-        <button type="button" class="cl-modo" data-modo="cercana">Más cercana</button>
+        <button type="button" class="cl-modo" data-modo="mapa">${t("en_el_mapa")}</button>
+        <button type="button" class="cl-modo" data-modo="cercana">${t("mas_cercana")}</button>
       </div>`;
     const input = cont.querySelector(".cl-input");
     const res = cont.querySelector(".cl-resultados-busq");
@@ -736,7 +978,7 @@
       // Las direcciones van primero porque son lo que se busca; las paradas salen al
       // instante y las empujaban fuera de la vista. Mientras llegan se deja puesta su
       // cabecera, para que las paradas no salten hacia abajo justo al ir a tocarlas.
-      if (direcciones.length || buscando) cont.appendChild(cabeceraGrupo("Direcciones"));
+      if (direcciones.length || buscando) cont.appendChild(cabeceraGrupo(t("direcciones")));
       for (const sitio of direcciones) {
         cont.appendChild(
           itemResultado(`⌂ ${sitio.nombre}`, () => fijarPunto(campo, sitio.lat, sitio.lon, sitio.nombre))
@@ -744,7 +986,7 @@
       }
       if (buscando) cont.appendChild(avisoBuscando());
       if (paradasEncontradas.length) {
-        cont.appendChild(cabeceraGrupo("Paradas"));
+        cont.appendChild(cabeceraGrupo(t("paradas")));
         for (const parada of paradasEncontradas) {
           cont.appendChild(itemResultado(`● ${parada.nombre}`, () => fijarParada(campo, parada.id)));
         }
@@ -759,7 +1001,7 @@
   function avisoBuscando() {
     const div = document.createElement("div");
     div.className = "cl-buscando";
-    div.textContent = "Buscando direcciones…";
+    div.textContent = t("buscando_direcciones");
     return div;
   }
 
@@ -787,7 +1029,7 @@
     modoMapa = campo;
     document.getElementById("panel-comollegar").hidden = true;
     document.getElementById("scrim-comollegar").hidden = true;
-    mostrarAviso(campo === "origen" ? "Toca la parada de origen en el mapa" : "Toca la parada de destino en el mapa");
+    mostrarAviso(t(campo === "origen" ? "toca_origen" : "toca_destino"));
   }
 
   async function alClicarElMapa(evento) {
@@ -815,43 +1057,43 @@
 
   function elegirCercana(campo) {
     if (!navigator.geolocation) {
-      mostrarAviso("La geolocalización no está disponible en este dispositivo.");
+      mostrarAviso(t("sin_geo"));
       return;
     }
-    mostrarAviso("Buscando tu ubicación…");
+    mostrarAviso(t("buscando_ubicacion"));
     navigator.geolocation.getCurrentPosition(
       (posicion) => {
         const cercana = paradaMasCercana(posicion.coords.latitude, posicion.coords.longitude, paradas);
         if (cercana) fijarParada(campo, cercana.id);
-        else mostrarAviso("No se encontró ninguna parada cercana.");
+        else mostrarAviso(t("sin_parada_cerca"));
       },
-      () => mostrarAviso("No se pudo obtener tu ubicación.")
+      () => mostrarAviso(t("sin_ubicacion"))
     );
   }
 
   async function buscarRuta() {
     const cont = document.getElementById("cl-resultados");
     if (!origenSel || !destinoSel) {
-      cont.innerHTML = '<p class="cl-estado">Elige origen y destino.</p>';
+      cont.innerHTML = `<p class="cl-estado">${t("elige_extremos")}</p>`;
       return;
     }
-    cont.innerHTML = '<p class="cl-estado">Buscando ruta…</p>';
+    cont.innerHTML = `<p class="cl-estado">${t("buscando_ruta")}</p>`;
     const parametros = [paramsExtremo("origen", origenSel), paramsExtremo("destino", destinoSel)];
     try {
       const resp = await fetch(`/api/plan?${parametros.join("&")}`);
       if (!resp.ok) throw new Error("plan");
       const data = await resp.json();
       if (data.aviso === "fuera de la red") {
-        cont.innerHTML = '<p class="cl-estado">Esa dirección no tiene paradas cerca.</p>';
+        cont.innerHTML = `<p class="cl-estado">${t("fuera_de_red")}</p>`;
         return;
       }
       if (data.aviso === "sin datos de paradas") {
-        cont.innerHTML = '<p class="cl-estado">Faltan los datos de paradas. Recarga la página.</p>';
+        cont.innerHTML = `<p class="cl-estado">${t("sin_datos_paradas")}</p>`;
         return;
       }
       renderRutas(data.rutas || [], data.a_pie);
     } catch (err) {
-      cont.innerHTML = '<p class="cl-estado">No se pudo calcular la ruta.</p>';
+      cont.innerHTML = `<p class="cl-estado">${t("error_ruta")}</p>`;
     }
   }
 
@@ -866,13 +1108,19 @@
   // Decir "transbordo en X" cuando hay que caminar dejaria fuera lo que mas importa.
   function textoTransbordo(tramo, siguiente) {
     if (tramo.bajar === siguiente.subir) {
-      return `<div class="cl-transbordo">↕ transbordo en ${escaparHtml(nombreParada(tramo.bajar))}</div>`;
+      const donde = escaparHtml(nombreParada(tramo.bajar));
+      return `<div class="cl-transbordo">${t("transbordo_en", { parada: donde })}</div>`;
     }
     const a = paradaPorId[tramo.bajar];
     const b = paradaPorId[siguiente.subir];
     const metros = a && b ? Math.round(haversine(a.lat, a.lon, b.lat, b.lon)) : null;
     const cuanto = metros != null ? ` (${metros} m)` : "";
-    return `<div class="cl-transbordo">↕ baja en ${escaparHtml(nombreParada(tramo.bajar))} y anda hasta ${escaparHtml(nombreParada(siguiente.subir))}${cuanto}</div>`;
+    const texto = t("baja_y_anda", {
+      a: escaparHtml(nombreParada(tramo.bajar)),
+      b: escaparHtml(nombreParada(siguiente.subir)),
+      cuanto,
+    });
+    return `<div class="cl-transbordo">${texto}</div>`;
   }
 
   function chipsDeTramo(tramo) {
@@ -891,22 +1139,21 @@
     // Con la espera dentro el total se sostiene, aunque el bus sea el siguiente y no
     // el anunciado. Sin ella es un suelo, y "desde" lo dice.
     const cerrado = ruta.espera_min != null;
-    const partes = [cerrado ? `~${ruta.total_min} min` : `desde ${ruta.total_min} min`];
-    if (ruta.andando_min) partes.push(`${ruta.andando_min} min andando`);
+    const partes = [t(cerrado ? "total_aprox" : "total_desde", { n: ruta.total_min })];
+    if (ruta.andando_min) partes.push(t("min_andando", { n: ruta.andando_min }));
     const linea = escaparHtml(ruta.tramos[0].linea);
     if (cerrado) {
-      const cual = ruta.aviso_espera === "no_llegas" ? "siguiente" : "próximo";
-      partes.push(`${cual} ${linea} en ${ruta.espera_min} min`);
+      const cual = ruta.aviso_espera === "no_llegas" ? "siguiente_linea" : "proximo_linea";
+      partes.push(t(cual, { linea, n: ruta.espera_min }));
     } else if (ruta.espera_max_min != null) {
       // Sin saber cuándo pasó el último, la frecuencia acota lo que puede tardar.
-      partes.push(`hasta ${ruta.espera_max_min} min de espera`);
+      partes.push(t("espera_max", { n: ruta.espera_max_min }));
     }
     if (ruta.espera_transbordo_min != null) {
-      partes.push(`${ruta.espera_transbordo_min} min de transbordo`);
+      partes.push(t("espera_transbordo", { n: ruta.espera_transbordo_min }));
     }
-    const cola = ruta.aviso_espera
-      ? ` <span class="cl-aviso">${AVISOS_ESPERA[ruta.aviso_espera] || ""}</span>`
-      : "";
+    const clave = AVISOS_ESPERA[ruta.aviso_espera];
+    const cola = clave ? ` <span class="cl-aviso">${t(clave)}</span>` : "";
     return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>${cola}`;
   }
 
@@ -918,17 +1165,19 @@
     const gana = mejor == null || aPie.minutos <= mejor;
     if (!gana && aPie.minutos > 25) return "";
     const km = aPie.metros >= 1000 ? `${(aPie.metros / 1000).toFixed(1)} km` : `${aPie.metros} m`;
-    const cab = gana ? "Andando, y llegas antes" : "O puedes ir andando";
+    const cab = t(gana ? "apie_gana" : "apie_alternativa");
     return `<div class="cl-ruta cl-apie"><div class="cl-ruta-cab">${cab}</div>` +
       `<div class="cl-tramo"><span class="cl-tramo-txt">${aPie.minutos} min · ${km}</span></div></div>`;
   }
 
   function renderRutas(rutas, aPie) {
+    // Se guardan para poder repintarlas al cambiar de idioma sin volver a preguntar.
+    ultimasRutas = rutas;
+    ultimoAPie = aPie;
     const cont = document.getElementById("cl-resultados");
     if (!rutas.length) {
       const pie = tarjetaAPie(aPie, rutas);
-      cont.innerHTML = pie ||
-        '<p class="cl-estado">No se encontró ruta (prueba con otras paradas).</p>';
+      cont.innerHTML = pie || `<p class="cl-estado">${t("sin_ruta")}</p>`;
       capaRuta.clearLayers();
       rutaActiva = null;
       document.body.classList.remove("ruta-activa");
@@ -944,7 +1193,9 @@
       const div = document.createElement("div");
       div.className = "cl-ruta" + (idx === 0 ? " activa" : "");
       const nt = tramos.length - 1;
-      const cabecera = nt === 0 ? "Directo" : nt + (nt > 1 ? " transbordos" : " transbordo");
+      const cabecera = nt === 0
+        ? t("directo")
+        : (nt > 1 ? t("transbordos_n", { n: nt }) : t("transbordo_1"));
       const partes = [`<div class="cl-ruta-cab">${cabecera}${textoMinutos(ruta)}</div>`];
       tramos.forEach((tramo, i) => {
         partes.push(`<div class="cl-tramo"><span class="cl-lineas">${chipsDeTramo(tramo)}</span><span class="cl-tramo-txt">${escaparHtml(nombreParada(tramo.subir))} → ${escaparHtml(nombreParada(tramo.bajar))}</span></div>`);
@@ -960,6 +1211,75 @@
     });
     if (pie && !pieGana) cont.insertAdjacentHTML("beforeend", pie);
     dibujarRuta(rutas[0].tramos);
+  }
+
+  // ---------- Encuadre del mapa ----------
+
+  // Los paneles van *encima* del mapa: en movil como hoja inferior a todo lo ancho, en
+  // escritorio como tarjeta pegada a la derecha. Encuadrar contra el mapa entero deja la
+  // ruta medio tapada, asi que se descuenta lo que ocupan y se centra en lo que queda.
+  const MARGEN_ENCUADRE = 40;
+  // Si el panel tapa casi todo, encuadrar contra la rendija que sobra daria un zoom
+  // absurdo: no se le cede mas de esta parte de la pantalla.
+  const MAXIMO_TAPADO = 0.6;
+
+  function loQueTapanLosPaneles() {
+    const mapa = map.getContainer().getBoundingClientRect();
+    let abajo = 0;
+    let derecha = 0;
+    for (const id of ["panel-comollegar", "panel-lineas"]) {
+      const panel = document.getElementById(id);
+      if (!panel || panel.hidden) continue;
+      const caja = panel.getBoundingClientRect();
+      if (!caja.width || !caja.height) continue;
+      // A todo lo ancho es la hoja de abajo; si no, la tarjeta de la derecha.
+      if (caja.width > mapa.width * 0.8) abajo = Math.max(abajo, mapa.bottom - caja.top);
+      else derecha = Math.max(derecha, mapa.right - caja.left);
+    }
+    return {
+      abajo: Math.min(Math.max(abajo, 0), mapa.height * MAXIMO_TAPADO),
+      derecha: Math.min(Math.max(derecha, 0), mapa.width * MAXIMO_TAPADO),
+    };
+  }
+
+  function encuadrar(limites) {
+    if (limites) limitesEncuadre = limites;
+    if (!limitesEncuadre || !limitesEncuadre.isValid()) return;
+    const tapado = loQueTapanLosPaneles();
+    // Sin animacion a proposito: asi el movimiento es sincrono y se distingue de uno
+    // del usuario, que es lo que apaga el reencuadre automatico.
+    encuadrando = true;
+    map.fitBounds(limitesEncuadre, {
+      paddingTopLeft: [MARGEN_ENCUADRE, MARGEN_ENCUADRE],
+      paddingBottomRight: [MARGEN_ENCUADRE + tapado.derecha, MARGEN_ENCUADRE + tapado.abajo],
+      animate: false,
+    });
+    encuadrando = false;
+  }
+
+  // La hoja de resultados cambia de alto sola: al llegar las rutas, al arrastrarla, al
+  // girar el movil. Con ella cambia el hueco visible, asi que hay que volver a encuadrar
+  // — salvo que el usuario ya haya movido el mapa a mano, y entonces manda el.
+  function reencuadrar() {
+    if (!encuadreAutomatico || pendienteEncuadre) return;
+    pendienteEncuadre = true;
+    requestAnimationFrame(() => {
+      pendienteEncuadre = false;
+      encuadrar(null);
+    });
+  }
+
+  function vigilarElHueco() {
+    const loMuevoYo = () => { if (!encuadrando) encuadreAutomatico = false; };
+    map.on("dragstart", loMuevoYo);
+    map.on("zoomstart", loMuevoYo);
+    window.addEventListener("resize", reencuadrar);
+    if (!window.ResizeObserver) return;
+    const observador = new ResizeObserver(reencuadrar);
+    for (const id of ["panel-comollegar", "panel-lineas"]) {
+      const panel = document.getElementById(id);
+      if (panel) observador.observe(panel);
+    }
   }
 
   function dibujarRuta(ruta) {
@@ -999,7 +1319,11 @@
     if (grupo.getLayers().length) grupo.addTo(capaRuta);
     // Los marcadores de origen/transbordo/destino los pinta refrescarMarcadores (clicables).
     refrescarMarcadores();
-    if (grupo.getLayers().length) map.fitBounds(grupo.getBounds(), { padding: [40, 40] });
+    if (grupo.getLayers().length) {
+      // Ruta nueva: se vuelve a mandar el encuadre aunque el usuario hubiera movido el mapa.
+      encuadreAutomatico = true;
+      encuadrar(grupo.getBounds());
+    }
   }
 
   function puntosPorParadas(tramo) {
@@ -1139,6 +1463,10 @@
     document.getElementById("cerrar-comollegar").addEventListener("click", cerrarComoLlegar);
     document.getElementById("scrim-comollegar").addEventListener("click", cerrarComoLlegar);
     document.getElementById("cl-buscar").addEventListener("click", buscarRuta);
+    document.getElementById("cl-invertir").addEventListener("click", invertirExtremos);
+    document.getElementById("lang-toggle")
+      .addEventListener("click", () => aplicarIdioma(idioma === "es" ? "en" : "es"));
+    aplicarIdioma(idioma);
     const buscador = document.getElementById("buscar-parada");
     buscador.addEventListener("input", (evento) => renderResultados(buscarParadas(evento.target.value)));
     buscador.addEventListener("blur", ocultarResultados);
@@ -1162,7 +1490,7 @@
         refrescarMarcadores();
         poblarChips(await obtenerTipoDia());
       })
-      .catch(() => mostrarAviso("No se pudieron cargar los datos del mapa. Recarga la página."));
+      .catch(() => mostrarAviso(t("error_datos_mapa")));
   }
 
   document.addEventListener("DOMContentLoaded", inicializar);
