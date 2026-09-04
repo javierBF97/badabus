@@ -359,24 +359,76 @@ def _espera_en_transbordos(
         intervalo = None
         if horarios and tipo_dia and ahora_min is not None:
             intervalo = frec.intervalo_min(horarios, linea, tipo_dia, ahora_min)
-        pasa = esperas.get(tramo["subir"], {}).get(linea)
-        espera = None
-        if pasa is not None and pasa != math.inf:
-            # Ese dato fija la fase de la línea en esa parada: si el bus que viene se
-            # escapa, los siguientes van de frecuencia en frecuencia.
-            while pasa < reloj + MARGEN_LLEGADA_MIN and intervalo:
-                pasa += intervalo
-            if pasa >= reloj + MARGEN_LLEGADA_MIN:
-                espera = pasa - reloj
-        if espera is None:
+        # Igual que al salir: se mira cuándo pasa cada autobús por esta parada, no solo
+        # el anunciado, y se coge el primero al que se llega a tiempo.
+        pasos = pasadas_en_parada(
+            linea, tramo["subir"], esperas, red, paradas, reales, intervalo)
+        alcanzables = [t for t in pasos if t >= reloj + MARGEN_LLEGADA_MIN]
+        if alcanzables:
+            espera = min(alcanzables) - reloj
+        else:
             espera = intervalo / 2 if intervalo else ESPERA_TRANSBORDO_MIN
         total += espera
         reloj += espera
     return total
 
 
+def pasadas_en_parada(
+    linea: str, parada: str, esperas: dict, red: dict, paradas: dict,
+    reales: dict | None = None, intervalo: float | None = None,
+) -> list[float]:
+    """Minutos desde ahora en que pasa cada autobús de esa línea por esa parada.
+
+    El servicio informa de **una sola llegada por línea y parada**, pero ese autobús
+    recorre la línea entera: si pasa por una parada dentro de diez minutos, llega a la
+    siguiente diez más el trayecto. Así una observación en cualquier parada vale para
+    todas las demás de su línea.
+
+    Esto es lo que permite ver que dos paradas distintas te suben **al mismo vehículo**.
+    Comparando esperas sueltas parecía que una parada lejana "esperaba menos", y se
+    proponía andar el doble para acabar en el mismo autobús y llegar a la misma hora.
+
+    Los valores negativos son buses que ya pasaron por aquí; se conservan porque sumando
+    la frecuencia dan los siguientes.
+    """
+    seq = red.get(linea) or []
+    if parada not in seq:
+        return []
+    aqui = seq.index(parada)
+    vistas = []
+    for otra, lineas in esperas.items():
+        observada = lineas.get(linea)
+        if observada is None or observada == math.inf or otra not in seq:
+            continue
+        alli = seq.index(otra)
+        if alli == aqui:
+            vistas.append(float(observada))
+        elif alli < aqui:
+            # El bus viene de allí: llega aquí más tarde.
+            vistas.append(observada + minutos_viaje(
+                [_tramo_simple(linea, otra, parada)], red, paradas, reales))
+        else:
+            # Ya pasó por aquí camino de allí.
+            vistas.append(observada - minutos_viaje(
+                [_tramo_simple(linea, parada, otra)], red, paradas, reales))
+    if not vistas:
+        return []
+    # De cada observación salen también los buses siguientes, una frecuencia aparte.
+    salida = set()
+    for t in vistas:
+        salida.add(round(t, 2))
+        if intervalo:
+            for n in range(1, 4):
+                salida.add(round(t + intervalo * n, 2))
+    return sorted(salida)
+
+
+def _tramo_simple(linea: str, subir: str, bajar: str) -> dict:
+    return {"linea": linea, "subir": subir, "bajar": bajar}
+
+
 def _resolver_espera(
-    linea: str, proximo, hasta_la_parada: float, camina: bool,
+    linea: str, pasadas: list, hasta_la_parada: float, camina: bool,
     horarios: dict, tipo_dia: str | None, ahora_min: int | None,
 ) -> tuple:
     """Cuánto se espera al bus, y qué se puede afirmar de ello.
@@ -385,9 +437,9 @@ def _resolver_espera(
     lo más que puede tardar cuando no se sabe la espera pero sí cada cuánto pasa; y
     `aviso` explica por qué no hay un número cerrado.
 
-    Si el bus anunciado se escapa mientras andas, la frecuencia cierra el hueco: el
-    siguiente va una frecuencia después de ese. Eso no es una suposición, es aritmética
-    sobre dos datos conocidos.
+    Recibe **cuándo pasa cada autobús** por esta parada, no solo el próximo, así que
+    elegir es quedarse con el primero al que se llega a tiempo. Si alguno pasó antes de
+    que pudieras estar allí, se dice: coges el siguiente, no el anunciado.
     """
     intervalo = None
     if horarios and tipo_dia and ahora_min is not None:
@@ -395,22 +447,24 @@ def _resolver_espera(
             return None, None, "fuera_de_servicio"
         intervalo = frec.intervalo_min(horarios, linea, tipo_dia, ahora_min)
 
-    if proximo is None or proximo == math.inf:
+    if not pasadas:
         # Sin dato en vivo no se sabe cuándo pasó el último, pero la frecuencia acota
         # la espera: nunca más de una vuelta.
         return None, intervalo, "sin_datos"
 
-    if camina and proximo < hasta_la_parada + MARGEN_LLEGADA_MIN:
-        if intervalo is None:
-            return None, None, "no_llegas"
-        siguiente = proximo + intervalo
-        if ahora_min is not None and horarios:
-            fin = frec.en_servicio(horarios, linea, tipo_dia, int(ahora_min + siguiente))
-            if fin is False:
-                return None, None, "fuera_de_servicio"
-        return siguiente - hasta_la_parada, None, "no_llegas"
+    # La estimación a pie es aproximada, así que no vale apurar al minuto.
+    listo = hasta_la_parada + (MARGEN_LLEGADA_MIN if camina else 0)
+    alcanzables = [t for t in pasadas if t >= listo]
+    if not alcanzables:
+        return None, intervalo, "no_llegas"
 
-    return proximo, None, None
+    primera = min(alcanzables)
+    if ahora_min is not None and horarios:
+        if frec.en_servicio(horarios, linea, tipo_dia, int(ahora_min + primera)) is False:
+            return None, None, "fuera_de_servicio"
+    # Si había alguno antes de estar listo, ese se pierde y conviene decirlo.
+    perdido = any(0 <= t < listo for t in pasadas)
+    return primera - hasta_la_parada, None, ("no_llegas" if perdido else None)
 
 
 def puntuar(
@@ -451,6 +505,20 @@ def puntuar(
             for ruta in rutas[:LIMITE_RUTAS]
         ]
 
+    # Cuando pasa cada bus por cada parada, calculado una vez por linea y parada:
+    # se repite en muchisimas rutas.
+    memoria: dict[tuple, list] = {}
+
+    def pasadas(linea: str, parada: str) -> list:
+        clave = (linea, parada)
+        if clave not in memoria:
+            intervalo = None
+            if horarios and tipo_dia and ahora_min is not None:
+                intervalo = frec.intervalo_min(horarios, linea, tipo_dia, ahora_min)
+            memoria[clave] = pasadas_en_parada(
+                linea, parada, esperas, red, paradas, reales, intervalo)
+        return memoria[clave]
+
     puntuadas = []
     for ruta in rutas:
         subir = ruta[0]["subir"]
@@ -462,7 +530,7 @@ def puntuar(
         hasta_la_parada = minutos_andando(andando_origen.get(subir, 0.0))
         espera, tope, aviso = _resolver_espera(
             ruta[0]["linea"],
-            esperas.get(subir, {}).get(ruta[0]["linea"]),
+            pasadas(ruta[0]["linea"], subir),
             hasta_la_parada,
             subir in andando_origen,
             horarios or {}, tipo_dia, ahora_min,

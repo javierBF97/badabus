@@ -393,12 +393,23 @@ class TestPuntuar(unittest.TestCase):
         self.assertIsNone(salida[0]["espera_min"])
 
     def test_un_bus_que_da_tiempo_a_coger_si_cuenta(self):
+        # 0.9 km son ~16 min andando y el bus pasa a los 30 DESDE AHORA: se llega en el
+        # minuto 16 y se espera hasta el 30, o sea 14. Sumar los 30 enteros contaria la
+        # caminata dos veces, dentro de la espera y otra vez aparte.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(
             rutas, self.RED, self.PARADAS, {"1": {"A": 30.0}}, andando_origen={"1": 0.9},
         )
         self.assertIsNone(salida[0]["aviso_espera"])
-        self.assertEqual(salida[0]["espera_min"], 30)
+        self.assertEqual(salida[0]["espera_min"], 14)
+        r = salida[0]
+        self.assertEqual(r["total_min"], r["andando_min"] + r["espera_min"] + r["viaje_min"])
+
+    def test_la_espera_es_la_de_la_parada_no_la_de_ahora(self):
+        # Sin caminata, esperar empieza ya: la espera es la llegada anunciada.
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 8.0}})
+        self.assertEqual(salida[0]["espera_min"], 8)
 
     def test_sin_dato_de_paso_se_avisa(self):
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
