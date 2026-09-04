@@ -102,6 +102,20 @@ class TestServer(unittest.TestCase):
         status, _ = self.get("/app.js")
         self.assertEqual(status, 200)
 
+    def cabeceras(self, path):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as resp:
+            return resp.headers
+
+    def test_los_ficheros_no_se_quedan_cacheados(self):
+        # Sin esto el navegador sirve un app.js viejo sin avisar, y se depura un rato
+        # algo que ya estaba arreglado.
+        self.assertEqual(self.cabeceras("/app.js")["Cache-Control"], "no-store")
+
+    def test_los_tiempos_en_vivo_tampoco(self):
+        # Aqui importa mas: un tiempo de paso guardado es un tiempo falso.
+        bus_data_api.fetch_json = lambda action, **kw: []
+        self.assertEqual(self.cabeceras("/api/parada/202")["Cache-Control"], "no-store")
+
     def test_unknown_asset_404(self):
         status, _ = self.get("/evil.js")
         self.assertEqual(status, 404)

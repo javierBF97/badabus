@@ -249,6 +249,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        # Nada de lo que se sirve aquí aguanta guardado: los tiempos son de hace un
+        # segundo, y los ficheros de web/ cambian mientras se trabaja en ellos. Sin
+        # esto el navegador se queda con una versión vieja sin decir nada, y se
+        # depura durante un rato algo que ya estaba arreglado.
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
