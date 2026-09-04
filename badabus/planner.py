@@ -35,20 +35,23 @@ def _indexar(red: dict, activas) -> tuple[dict, dict, dict]:
 def _puntos_de_subida(parada: str, camino: tuple, vecinas: dict, pos: dict) -> list[str]:
     """Dónde se puede subir al bajar aquí: esta parada, y las que quedan a un paseo.
 
-    No se anda hacia atrás: si el bus del que acabas de bajar ya había pasado por esa
-    parada, ir hasta ella es deshacer camino. Cruzar la calle sí vale, porque las dos
-    aceras son paradas distintas y a veces el sentido que quieres es el otro.
+    **No se anda a una parada por la que pase el bus del que acabas de bajar.** Si pasa
+    antes, ir hasta ella es deshacer camino; si pasa después, bastaba con seguir sentado.
+    Andar doscientos metros para hacer lo que el bus hace en dos paradas no es una ruta,
+    y el planificador la prefería porque mide el coste en paradas recorridas: bajarse
+    antes le salía más barato.
+
+    Cruzar la calle sí vale, porque las dos aceras son paradas distintas y el sentido
+    que quieres puede ser el otro: lo que se descarta es la parada que ya está en el
+    recorrido, no la de enfrente.
     """
     puntos = [parada]
     if not vecinas or not camino:
         return puntos
     linea = camino[-1]["linea"]
-    aqui = pos.get((linea, parada))
     for otra, _km in vecinas.get(parada, ()):
-        antes = pos.get((linea, otra))
-        if antes is not None and aqui is not None and antes <= aqui:
-            continue
-        puntos.append(otra)
+        if pos.get((linea, otra)) is None:
+            puntos.append(otra)
     return puntos
 
 
@@ -135,7 +138,14 @@ def _mejores(rutas: list, seq: dict, limite: int = 6) -> list:
     for ruta in rutas:
         if len(ruta) > minimo:
             continue
-        clave = tuple(t["linea"] for t in ruta)
+        # El coste se mide en paradas recorridas, y andar no cuenta: bajarse antes para
+        # caminar sale "mas barato" aunque sean doscientos metros a pie. Por eso la
+        # version con transbordo en parada y la que anda no compiten aqui — se guarda la
+        # mejor de cada una y decide el ranking, que si conoce distancias y tiempos.
+        clave = (
+            tuple(t["linea"] for t in ruta),
+            tuple(a["bajar"] != b["subir"] for a, b in zip(ruta, ruta[1:], strict=False)),
+        )
         coste = sum(_paradas_tramo(t, seq) for t in ruta)
         if clave not in mejor or coste < mejor[clave][0]:
             mejor[clave] = (coste, ruta)

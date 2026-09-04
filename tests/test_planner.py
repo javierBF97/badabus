@@ -91,6 +91,29 @@ class TestTransbordoAndando(unittest.TestCase):
             {"linea": "B", "subir": "3", "bajar": "4"},
         ]])
 
+    def test_ofrece_las_dos_versiones_cuando_hay_transbordo_en_parada(self):
+        # Con las mismas lineas hay dos formas: bajarse antes y andar, o seguir hasta
+        # la parada comun. El planificador no debe elegir por su cuenta: medir en
+        # paradas recorridas hace ganar a la de andar, que puede ser mucho peor.
+        red = {"C": ["1", "2", "3"], "E": ["9", "3", "4"]}
+        vecinas = {"2": [("9", 0.2)], "9": [("2", 0.2)]}
+        rutas = planner.planificar_muchos(["1"], ["4"], red, ["C", "E"], vecinas=vecinas)
+        formas = {tuple(a["bajar"] != b["subir"] for a, b in zip(r, r[1:], strict=False)) for r in rutas}
+        self.assertIn((True,), formas, "falta la version andando")
+        self.assertIn((False,), formas, "falta la version sin andar")
+
+    def test_no_se_baja_antes_para_andar_a_donde_el_bus_llega(self):
+        # La C pasa por 5, 6 y 7. Bajarse en 6 y andar hasta 7 es absurdo: el bus va.
+        red = {"C": ["5", "6", "7"], "E": ["7", "8"]}
+        vecinas = {"6": [("7", 0.2)], "7": [("6", 0.2)]}
+        rutas = planner.planificar_muchos(["5"], ["8"], red, ["C", "E"], vecinas=vecinas)
+        for ruta in rutas:
+            for anterior, siguiente in zip(ruta, ruta[1:], strict=False):
+                self.assertEqual(
+                    anterior["bajar"], siguiente["subir"],
+                    "se baja antes para andar a una parada de su propia linea",
+                )
+
     def test_no_se_anda_hacia_atras(self):
         # La C pasa por 5 antes que por 6: al bajar en 6 no se vuelve andando a la 5.
         red = {"C": ["5", "6"], "E": ["5", "7"]}

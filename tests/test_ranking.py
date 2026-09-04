@@ -187,6 +187,25 @@ class TestPuntuar(unittest.TestCase):
 
     HORARIOS = {"A": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
 
+    def test_llegando_andando_la_espera_sigue_saliendo_del_tiempo_real(self):
+        # Se baja en 2, se anda hasta 3 (otra parada) y alli se coge la B. La espera
+        # debe salir del tiempo real de la parada 3, contando ya la caminata.
+        red = {"A": ["1", "2"], "B": ["3", "4"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967),
+                   "3": (38.881, -6.967), "4": (38.881, -6.964)}
+        horarios = {"B": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
+        ruta = [{"linea": "A", "subir": "1", "bajar": "2"},
+                {"linea": "B", "subir": "3", "bajar": "4"}]
+        salida = ranking.puntuar(
+            [ruta], red, paradas, {"1": {"A": 0.0}, "3": {"B": 30.0}},
+            horarios=horarios, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        # Con el bus a 30 min hay tiempo de sobra: la espera es lo que queda tras andar,
+        # y por tanto menor que los 30 y mayor que la media frecuencia (10).
+        espera = salida[0]["espera_transbordo_min"]
+        self.assertLess(espera, 30)
+        self.assertGreater(espera, 10)
+
     def test_la_caminata_del_transbordo_entra_en_el_total(self):
         # Bajar en 2 y andar hasta 3 para coger la B: esos metros son tiempo.
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967),
