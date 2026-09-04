@@ -44,15 +44,41 @@ un factor de callejeo, porque el peatón tampoco atraviesa edificios. Sirve para
 alternativas y dar una idea, no es un tiempo real de caminata.
 
 ## Direcciones
-Nadie piensa un viaje en paradas: piensa en "quiero ir a Calle Menacho 12". Para traducir
-una cosa en la otra se usa **Nominatim**, el geocodificador de OpenStreetMap, acotado a
-Badajoz.
 
-Se consulta **desde el servidor, nunca desde el navegador**. Su política de uso limita a una
-petición por segundo, exige un `User-Agent` identificable y prohíbe expresamente el
-autocompletado; por eso el buscador espera a que dejes de escribir, no consulta con menos de
-cuatro caracteres y reutiliza lo ya buscado. Concentrarlo en el servidor permite cumplir todo
-eso en un único sitio, igual que ya se hace de proxy con los tiempos.
+Nadie piensa un viaje en paradas: piensa en "quiero ir a tal calle". Traducir una cosa en la
+otra necesita un geocodificador, y elegirlo llevó su comparación.
+
+**Se empezó con Nominatim**, el de OpenStreetMap. Funciona, pero su política **prohíbe
+expresamente el autocompletado** y limita a una petición por segundo. De ahí salían el mínimo
+de cuatro caracteres, la espera antes de consultar y el hueco forzado entre peticiones: no
+eran decisiones de diseño, eran su reglamento. El síntoma se veía escribiendo media palabra —
+"Condes de Barc" devolvía **cero resultados**.
+
+**Se probó Cartociudad**, del Instituto Geográfico Nacional. Tiene portales oficiales con
+número, que OpenStreetMap no siempre trae, y no prohíbe el autocompletado. Pero medido sobre
+catorce calles reales, **dos de cada catorce no devolvían nada**: cuando el número de portal
+no está en su base, responde vacío en lugar de ofrecer la calle. Y con el número inexistente
+sustituye por el más cercano sin avisar — se pidió el 88 y devolvió el 58.
+
+**Se quedó Photon** (Komoot, también sobre OpenStreetMap). Está construido para buscar
+mientras se escribe, y eso figura entre sus funciones declaradas:
+
+| | Nominatim | Cartociudad | Photon |
+|---|---|---|---|
+| Media palabra | ✗ | ✗ | **✓** |
+| Autocompletado | Prohibido | Permitido | **Función declarada** |
+| Número inexistente | Da la calle | **Vacío** | Da la calle |
+| Tiempo medido | 274-2.000 ms | 440-790 ms | **185-474 ms** |
+
+**Cartociudad se queda de respaldo**, no de repuesto: entra solo cuando Photon no encuentra
+nada, y aporta datos de otra fuente —el catastro— en vez de repetir los mismos. Nominatim
+salió del proyecto por eso mismo: bebe de OpenStreetMap igual que Photon, así que como
+segunda opinión no aportaba nada.
+
+Ambos se consultan **desde el servidor, nunca desde el navegador**, igual que se hace de
+proxy con los tiempos: así la identificación y la cortesía con el servicio se cumplen en un
+único sitio. Y aunque Photon permita buscar tecla a tecla, **una petición por pulsación sería
+abusar** de algo gratuito: se mantiene una espera corta y una caché de lo ya buscado.
 
 Partiendo de una dirección, la parada más cercana no siempre es la mejor: a 90 m puede haber
 una de una línea que va al lado contrario, y a 250 m otra que lleva directo. Por eso se
@@ -166,6 +192,44 @@ parecer mejor a una ruta:
 menos **y** con menos transbordos, esta no es una alternativa: no hay a quien le convenga.
 Descartarlas no exige decidir cuánto vale un minuto andando frente a uno esperando —eso sería
 opinable—, basta con que otra gane en las tres.
+
+**Paso 9 — el mismo autobús contado como dos.** Una consulta mandaba a andar veinte minutos
+hasta una parada lejana teniendo una al lado. Mirando los datos en vivo se veía por qué: la
+cercana anunciaba **11 minutos** y la lejana **cero**, y cero gana a once en cualquier
+comparación. Pero entre las dos hay **6,8 minutos de trayecto** de esa misma línea, así que
+el cero de la lejana era un autobús que estaba pasando por allí en ese momento, imposible de
+alcanzar después de veinte minutos andando. El siguiente que pasa por la lejana es justo el
+que la cercana anuncia a 11 minutos: 11 + 6,8 = 18. **Andar veinte minutos para coger el bus
+que tienes al lado.**
+
+El fallo estaba en tratar cada parada como si tuviera su propio servicio. Una llegada
+observada en una parada no informa solo de esa parada: reconstruye **el paso de ese vehículo
+por toda la línea**, hacia adelante sumando el trayecto y hacia atrás restándolo. Con eso la
+espera deja de ser el número que anuncia la parada y pasa a ser *cuándo pasa por aquí el
+primer autobús al que llego a tiempo*. Un bus que ya ha pasado deja de contar, esté donde
+esté.
+
+En el caso de arriba el resultado coincidió con lo que se veía a ojo, que es la mejor señal:
+
+| | Antes | Ahora |
+|---|---|---|
+| Total | 42 min | **35 min** |
+| Andando | 20 min | 19 min |
+
+y la segunda opción pasó a ser un transbordo de 36 minutos con solo 10 andando: las dos
+paradas que cualquiera del barrio habría dicho de memoria.
+
+Comprobado después sobre **siete pares origen-destino al azar**, en ninguno se elige una
+parada que llegue más tarde. Uno saltó en la revisión y resultó ser un fallo *del
+comprobador*, no del ranking: comparaba esperas pedidas con un minuto de diferencia, que es
+el mismo error que este paso viene a arreglar, cometido al verificarlo.
+
+**Paso 10 — y la caminata contada dos veces.** Lo anterior destapó una incoherencia que
+llevaba ahí desde el principio, en las dos ramas del cálculo: cuando **se perdía** el
+autobús se restaba lo andado, y cuando **se cogía**, no. Un viaje de 32 minutos se anunciaba
+como **48**. Había un test que fijaba el número equivocado, así que el fallo estaba escrito y
+protegido: se corrigió explicando por qué, y se añadió el caso complementario para que las
+dos ramas no puedan volver a discrepar.
 
 ## Frecuencias de paso
 
