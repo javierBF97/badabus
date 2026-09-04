@@ -897,7 +897,7 @@
     // el anunciado. Sin ella es un suelo, y "desde" lo dice.
     const cerrado = ruta.espera_min != null;
     const partes = [cerrado ? `~${ruta.total_min} min` : `desde ${ruta.total_min} min`];
-    if (ruta.andando_min != null) partes.push(`${ruta.andando_min} min andando`);
+    if (ruta.andando_min) partes.push(`${ruta.andando_min} min andando`);
     const linea = escaparHtml(ruta.tramos[0].linea);
     if (cerrado) {
       const cual = ruta.aviso_espera === "no_llegas" ? "siguiente" : "próximo";
@@ -951,16 +951,35 @@
   function dibujarRuta(ruta) {
     capaRuta.clearLayers();
     const grupo = L.featureGroup();
-    for (const tramo of ruta) {
+    for (const [i, tramo] of ruta.entries()) {
       const puntos = puntosShape(tramo.linea, tramo.subir, tramo.bajar) || puntosPorParadas(tramo);
       if (puntos && puntos.length >= 2) {
         L.polyline(puntos, { color: colorLinea(tramo.linea), weight: 5, opacity: 0.9 }).addTo(grupo);
       }
+      // Un transbordo andando deja un hueco entre un tramo y el siguiente. Sin nada
+      // en medio la ruta parece rota, asi que se une con una recta punteada: no es el
+      // camino real (eso pediria un ruteador peatonal), pero si por donde hay que ir.
+      const siguiente = ruta[i + 1];
+      if (siguiente && siguiente.subir !== tramo.bajar) {
+        const a = paradaPorId[tramo.bajar];
+        const b = paradaPorId[siguiente.subir];
+        if (a && b && coordsValidas(a) && coordsValidas(b)) {
+          L.polyline([[a.lat, a.lon], [b.lat, b.lon]], {
+            color: "#6b7280", weight: 3, opacity: 0.9, dashArray: "2 8",
+          }).addTo(grupo);
+        }
+      }
+    }
+    // Las paradas clave incluyen aquella hasta la que se anda: es donde se coge el bus.
+    const clave = new Set();
+    for (const [i, tramo] of ruta.entries()) {
+      if (i < ruta.length - 1) clave.add(tramo.bajar);
+      if (i > 0 && tramo.subir !== ruta[i - 1].bajar) clave.add(tramo.subir);
     }
     rutaActiva = {
       origen: ruta[0].subir,
       destino: ruta[ruta.length - 1].bajar,
-      transbordos: new Set(ruta.slice(0, -1).map((tramo) => tramo.bajar)),
+      transbordos: clave,
     };
     document.body.classList.add("ruta-activa");
     if (grupo.getLayers().length) grupo.addTo(capaRuta);
