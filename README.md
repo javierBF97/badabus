@@ -409,6 +409,37 @@ lista los disponibles:
   imprime al arrancar la dirección a la que conectarse. Hazlo solo en redes de confianza:
   queda expuesta a quien esté en esa red.
 
+## Limitaciones
+
+Los minutos que se enseñan salen de estimaciones, y conviene decir de cuáles.
+
+**No hay ruteador peatonal.** Cada caminata es la distancia en línea recta multiplicada por
+un factor de callejeo de 1,3. Para comprobarlo se usaron los trazados de los propios
+autobuses como mapa de calles —solo cruzan el río por los puentes, así que llevan dentro los
+obstáculos de la ciudad—: el factor real tiene una **mediana de 1,21 y un p90 de 1,93**, de
+modo que 1,3 está bien elegido para el caso corriente. Lo que no cubre es la cola. De 882
+parejas de paradas a menos de 300 m, **75 pasan de 2x y ocho de 5x**: medianas de avenida,
+vías y el río. Un caso real, dos paradas del mismo paseo: **87 m en línea recta, 619 m
+andando de verdad**. Ahí la estimación se queda corta y la aplicación no tiene forma de
+saberlo.
+
+*(La primera versión de esa medición salió mal y decía factores de hasta 595x. Eran paradas
+enfrentadas a siete metros, la de ida y la de vuelta: los dos trazados van por carriles
+distintos y la rejilla no los cosía, así que el grafo estaba partido y se medía el fallo de
+montaje. Cosiendo los trazados a menos de 25 m salieron las cifras de arriba.)*
+
+**No hay tráfico real.** El servicio no publica dónde están sus vehículos, solo cuándo pasa
+el próximo por cada parada. Y ese dato resultó ser **una fórmula**, no una medición:
+distancia dividida por una velocidad fija. Los metros por minuto dieron una mediana de 334,
+p10 de 320 y p90 de 391, y el 11 % de desviación se explica por el redondeo a minutos. Así
+que deducir la velocidad real de su API es circular. El planificador usa 20 km/h para todas
+las líneas y a todas las horas: no distingue hora punta, ni una avenida de una calle del
+casco antiguo. **Esto no se puede resolver desde fuera**, salvo observando llegadas durante
+semanas para construirse un histórico propio.
+
+Ninguna de las dos cosas hace inútiles los tiempos: sirven para **ordenar alternativas**, que
+es para lo que están. Pero no son un reloj.
+
 ## Aviso
 Herramienta personal que consume datos públicos del servicio de autobús urbano de
 Badajoz. No es un producto oficial y no redistribuye sus datos. Uso responsable.
