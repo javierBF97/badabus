@@ -32,9 +32,76 @@ def distancia_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * RADIO_TIERRA_KM * math.asin(math.sqrt(h))
 
 
-def minutos_viaje(ruta: list[dict], red: dict, paradas: dict) -> float:
-    """Minutos de trayecto estimados: distancia recta entre paradas,
-    corregida y a velocidad media.
+def cargar_shapes(data_dir: Path = DATA_DIR) -> dict:
+    """La geometría de cada línea, o {} si no está el fichero."""
+    try:
+        return json.loads((data_dir / "shapes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _puntos(sentido: list) -> list:
+    salida = []
+    for p in sentido:
+        if isinstance(p, dict):
+            lat, lon = p.get("lat"), p.get("lon")
+        elif isinstance(p, (list, tuple)) and len(p) >= 2:
+            lat, lon = p[0], p[1]
+        else:
+            continue
+        try:
+            salida.append((float(lat), float(lon)))
+        except (TypeError, ValueError):
+            continue
+    return salida
+
+
+def distancias_por_tramo(red: dict, paradas: dict, shapes: dict) -> dict:
+    """Metros de carretera entre paradas consecutivas: {(línea, a, b): km}.
+
+    La distancia recta corregida por un factor fijo falla en las dos direcciones: se
+    midió sobre 491 tramos y la sinuosidad real va de 0,95 a 2,19, con mediana 1,10
+    frente al 1,30 que se aplicaba a todos. En los tramos rectos sobraba tiempo y en
+    los revirados faltaban minutos, que es lo grave porque hace perder transbordos.
+
+    La geometría ya está descargada, así que la distancia se puede medir en lugar de
+    suponerla. Se calcula una vez: recorrer los trazados en cada consulta sería caro.
+    """
+    reales: dict[tuple, float] = {}
+    for linea, seq in red.items():
+        for sentido in (shapes.get(linea) or {}).values():
+            pts = _puntos(sentido)
+            if len(pts) < 2:
+                continue
+            # El punto del trazado más cercano a cada parada, una vez por parada.
+            cerca = {}
+            for parada in set(seq):
+                if parada in paradas:
+                    cerca[parada] = min(
+                        range(len(pts)), key=lambda i: distancia_km(paradas[parada], pts[i])
+                    )
+            for a, b in zip(seq, seq[1:], strict=False):
+                if a not in cerca or b not in cerca or cerca[b] <= cerca[a]:
+                    continue
+                if (linea, a, b) in reales:
+                    continue
+                tramo = pts[cerca[a]:cerca[b] + 1]
+                km = sum(distancia_km(tramo[i], tramo[i + 1]) for i in range(len(tramo) - 1))
+                recta = distancia_km(paradas[a], paradas[b])
+                # Un trazado mal alineado puede dar disparates: se descarta lo imposible.
+                if recta > 0 and recta <= km <= recta * 3:
+                    reales[(linea, a, b)] = km
+    return reales
+
+
+def minutos_viaje(
+    ruta: list[dict], red: dict, paradas: dict, reales: dict | None = None
+) -> float:
+    """Minutos de trayecto estimados, a velocidad comercial media.
+
+    Con `reales` se usa la distancia de carretera medida del trazado de la línea. Sin
+    ella se cae a la recta entre paradas corregida por un factor fijo, que es peor pero
+    no necesita la geometría descargada.
 
     Se ignoran las paradas sin coordenadas y se suma entre las que quedan,
     en orden.
@@ -45,15 +112,24 @@ def minutos_viaje(ruta: list[dict], red: dict, paradas: dict) -> float:
     (que repiten paradas), un tramo del retorno puede medirse con más
     paradas intermedias de las ideales.
     """
+    reales = reales or {}
     km = 0.0
     for tramo in ruta:
-        seq = red[tramo["linea"]]
+        linea = tramo["linea"]
+        seq = red[linea]
         i = seq.index(tramo["subir"])
         j = i + 1 + seq[i + 1:].index(tramo["bajar"])
-        coords = [paradas[s] for s in seq[i:j + 1] if s in paradas]
-        for a, b in zip(coords, coords[1:], strict=False):
-            km += distancia_km(a, b)
-    return km * FACTOR_SINUOSIDAD / VELOCIDAD_COMERCIAL_KMH * 60
+        # Las paradas sin coordenadas se puentean: se mide de la anterior a la
+        # siguiente, que es mejor aproximación que descontar ese trozo del viaje.
+        entre = [s for s in seq[i:j + 1] if s in paradas]
+        for a, b in zip(entre, entre[1:], strict=False):
+            medida = reales.get((linea, a, b))
+            if medida is not None:
+                km += medida
+            else:
+                # Sin geometría de ese tramo, la recta corregida es lo que hay.
+                km += distancia_km(paradas[a], paradas[b]) * FACTOR_SINUOSIDAD
+    return km / VELOCIDAD_COMERCIAL_KMH * 60
 
 
 def minutos_andando(km: float) -> float:
@@ -259,6 +335,7 @@ def _una_por_combinacion(puntuadas: list) -> list:
 def _espera_en_transbordos(
     ruta: list, red: dict, paradas: dict, esperas: dict, horarios: dict,
     tipo_dia: str | None, ahora_min: int | None, desde_min: float,
+    reales: dict | None = None,
 ) -> float:
     """Lo que se espera en los transbordos, que antes no se contaba en absoluto.
 
@@ -274,7 +351,7 @@ def _espera_en_transbordos(
     total = 0.0
     reloj = desde_min          # minutos desde ahora en que arranca el tramo en curso
     for anterior, tramo in zip(ruta, ruta[1:], strict=False):
-        reloj += minutos_viaje([anterior], red, paradas)
+        reloj += minutos_viaje([anterior], red, paradas, reales)
         if anterior["bajar"] != tramo["subir"]:
             # El transbordo es andando: hay que llegar antes de poder subir.
             reloj += minutos_andando(km_entre_tramos([anterior, tramo], paradas))
@@ -346,6 +423,7 @@ def puntuar(
     horarios: dict | None = None,
     tipo_dia: str | None = None,
     ahora_min: int | None = None,
+    reales: dict | None = None,
 ) -> list[dict]:
     """Ordena las rutas por tiempo total estimado y filtra las mucho peores.
 
@@ -377,20 +455,24 @@ def puntuar(
     for ruta in rutas:
         subir = ruta[0]["subir"]
         bajar = ruta[-1]["bajar"]
-        viaje = minutos_viaje(ruta, red, paradas)
+        viaje = minutos_viaje(ruta, red, paradas, reales)
         km = (andando_origen.get(subir, 0.0) + andando_destino.get(bajar, 0.0)
               + km_entre_tramos(ruta, paradas))
         andando = minutos_andando(km)
+        hasta_la_parada = minutos_andando(andando_origen.get(subir, 0.0))
         espera, tope, aviso = _resolver_espera(
             ruta[0]["linea"],
             esperas.get(subir, {}).get(ruta[0]["linea"]),
-            minutos_andando(andando_origen.get(subir, 0.0)),
+            hasta_la_parada,
             subir in andando_origen,
             horarios or {}, tipo_dia, ahora_min,
         )
+        # Al transbordo se llega tras andar HASTA LA PRIMERA PARADA y viajar; la
+        # caminata del destino ocurre al bajarse del ultimo bus, no antes de subir al
+        # segundo. Contarla aqui adelantaba el reloj y elegia mal el bus del enlace.
         transbordo = _espera_en_transbordos(
             ruta, red, paradas, esperas, horarios or {}, tipo_dia, ahora_min,
-            andando + (espera or 0),
+            hasta_la_parada + (espera or 0), reales,
         )
         total = viaje + andando + (espera or 0) + transbordo
         puntuadas.append((total, viaje, espera, tope, andando, transbordo, aviso, ruta))

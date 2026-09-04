@@ -379,6 +379,11 @@ button:hover {
   cursor: pointer;
 }
 
+.cl-apie {
+  border-style: dashed;
+  cursor: default;
+}
+
 .cl-ruta.activa {
   border-color: var(--accent);
   background: var(--bg);

@@ -854,7 +854,7 @@
         cont.innerHTML = '<p class="cl-estado">Faltan los datos de paradas. Recarga la página.</p>';
         return;
       }
-      renderRutas(data.rutas || []);
+      renderRutas(data.rutas || [], data.a_pie);
     } catch (err) {
       cont.innerHTML = '<p class="cl-estado">No se pudo calcular la ruta.</p>';
     }
@@ -915,10 +915,25 @@
     return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>${cola}`;
   }
 
-  function renderRutas(rutas) {
+  // Andar gana en los trayectos cortos, y si no gana sigue siendo util saber que
+  // existe: cuantos minutos son y si compensa esperar al bus.
+  function tarjetaAPie(aPie, rutas) {
+    if (!aPie || aPie.minutos == null) return "";
+    const mejor = rutas.length ? rutas[0].total_min : null;
+    const gana = mejor == null || aPie.minutos <= mejor;
+    if (!gana && aPie.minutos > 25) return "";
+    const km = aPie.metros >= 1000 ? `${(aPie.metros / 1000).toFixed(1)} km` : `${aPie.metros} m`;
+    const cab = gana ? "Andando, y llegas antes" : "O puedes ir andando";
+    return `<div class="cl-ruta cl-apie"><div class="cl-ruta-cab">${cab}</div>` +
+      `<div class="cl-tramo"><span class="cl-tramo-txt">${aPie.minutos} min · ${km}</span></div></div>`;
+  }
+
+  function renderRutas(rutas, aPie) {
     const cont = document.getElementById("cl-resultados");
     if (!rutas.length) {
-      cont.innerHTML = '<p class="cl-estado">No se encontró ruta (prueba con otras paradas).</p>';
+      const pie = tarjetaAPie(aPie, rutas);
+      cont.innerHTML = pie ||
+        '<p class="cl-estado">No se encontró ruta (prueba con otras paradas).</p>';
       capaRuta.clearLayers();
       rutaActiva = null;
       document.body.classList.remove("ruta-activa");
@@ -926,6 +941,9 @@
       return;
     }
     cont.innerHTML = "";
+    const pie = tarjetaAPie(aPie, rutas);
+    const pieGana = pie && aPie.minutos <= rutas[0].total_min;
+    if (pieGana) cont.insertAdjacentHTML("beforeend", pie);
     rutas.forEach((ruta, idx) => {
       const tramos = ruta.tramos;
       const div = document.createElement("div");
@@ -945,6 +963,7 @@
       });
       cont.appendChild(div);
     });
+    if (pie && !pieGana) cont.insertAdjacentHTML("beforeend", pie);
     dibujarRuta(rutas[0].tramos);
   }
 

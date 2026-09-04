@@ -211,6 +211,42 @@ class TestServer(unittest.TestCase):
         leido = server.leer_env(env)
         self.assertEqual(leido.get("BADABUS_HOST", server.HOST_POR_DEFECTO), "127.0.0.1")
 
+    def _con_red(self, red, dias, paradas, ruta):
+        """Ejecuta una peticion con la red de prueba puesta, y la deja como estaba."""
+        originales = (server.planner.cargar_datos, server.dia.tipo_dia_actual,
+                      bus_data_api.fetch_json, server.ranking.cargar_paradas)
+        server.planner.cargar_datos = lambda *a, **kw: (red, dias)
+        server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
+        server.ranking.cargar_paradas = lambda *a, **kw: paradas
+        bus_data_api.fetch_json = lambda action, **kw: []
+        try:
+            return self.get(ruta)
+        finally:
+            (server.planner.cargar_datos, server.dia.tipo_dia_actual,
+             bus_data_api.fetch_json, server.ranking.cargar_paradas) = originales
+
+    def test_plan_ofrece_ir_andando(self):
+        # Sin esto se proponia un cuarto de hora de autobus para doscientos metros.
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.968), "3": (38.880, -6.965)}
+        status, body = self._con_red(
+            {"A": ["1", "2", "3"]}, {"LV": ["A"]}, paradas,
+            "/api/plan?origen_lat=38.880&origen_lon=-6.9700"
+            "&destino_lat=38.880&destino_lon=-6.9690",
+        )
+        self.assertEqual(status, 200)
+        datos = json.loads(body)
+        self.assertIn("a_pie", datos)
+        self.assertGreater(datos["a_pie"]["minutos"], 0)
+        self.assertGreater(datos["a_pie"]["metros"], 0)
+
+    def test_plan_sin_punto_conocido_no_inventa_la_caminata(self):
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.965)}
+        status, body = self._con_red(
+            {"A": ["1", "2"]}, {"LV": ["A"]}, paradas, "/api/plan?origen=1&destino=99")
+        self.assertEqual(status, 200)
+        # La 99 no existe: sin punto de destino no se afirma ninguna caminata.
+        self.assertNotIn("a_pie", json.loads(body))
+
     def test_plan_ok(self):
         red = {"A": ["1", "2", "3"]}
         dias = {"LV": ["A"]}

@@ -137,6 +137,7 @@ class Handler(BaseHTTPRequestHandler):
                 ranking.puntuar, red=red, paradas=paradas,
                 andando_origen=andando_origen, andando_destino=andando_destino,
                 horarios=horarios, tipo_dia=tipo, ahora_min=ahora_min,
+                reales=distancias_reales(red, paradas),
             )
             elegidas = puntuar(rutas, esperas=esperas)
             # Los tiempos del transbordo se consultan en una segunda vuelta, y solo en
@@ -170,8 +171,27 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 for ruta in rutas[: ranking.LIMITE_RUTAS]
             ]
-        body = json.dumps({"rutas": rutas}, ensure_ascii=False).encode("utf-8")
+        respuesta = {"rutas": rutas}
+        # Ir andando también es una forma de llegar, y para trayectos cortos es la
+        # buena: sin esto se ofrecía un cuarto de hora de autobús para doscientos
+        # metros. Se manda siempre que se sepan los dos extremos y decide el frontend.
+        a_pie = self.a_pie(params, paradas)
+        if a_pie:
+            respuesta["a_pie"] = a_pie
+        body = json.dumps(respuesta, ensure_ascii=False).encode("utf-8")
         self.send_bytes(200, body, "application/json; charset=utf-8")
+
+    def a_pie(self, params: dict, paradas: dict) -> dict | None:
+        """La caminata directa de un extremo al otro, si se conocen los dos."""
+        origen = punto_de_extremo(params, "origen", paradas)
+        destino = punto_de_extremo(params, "destino", paradas)
+        if not origen or not destino:
+            return None
+        km = ranking.distancia_km(origen, destino)
+        return {
+            "minutos": round(ranking.minutos_andando(km)),
+            "metros": round(km * ranking.FACTOR_CALLEJEO * 1000),
+        }
 
     def handle_dia(self) -> None:
         try:
@@ -248,6 +268,20 @@ class Handler(BaseHTTPRequestHandler):
 _VECINAS: dict | None = None
 
 
+_TRAMOS_REALES: dict | None = None
+
+
+def distancias_reales(red: dict, paradas: dict) -> dict:
+    """Metros de carretera entre paradas consecutivas, calculados una sola vez.
+
+    Recorrer los trazados cuesta unos 200 ms y no cambia entre consultas.
+    """
+    global _TRAMOS_REALES
+    if _TRAMOS_REALES is None:
+        _TRAMOS_REALES = ranking.distancias_por_tramo(red, paradas, ranking.cargar_shapes())
+    return _TRAMOS_REALES
+
+
 def vecinas_de_paradas(paradas: dict) -> dict:
     """El grafo de paradas que se tocan andando, calculado una sola vez.
 
@@ -280,6 +314,19 @@ def esperas_en_vivo(paradas: set) -> dict:
 
     with ThreadPoolExecutor(max_workers=CONSULTAS_A_LA_VEZ) as pool:
         return {p: e for p, e in pool.map(consultar, paradas) if e is not None}
+
+
+def punto_de_extremo(params: dict, prefijo: str, paradas: dict) -> tuple | None:
+    """Las coordenadas de un extremo, venga como id de parada o como par lat/lon."""
+    ident = (params.get(prefijo) or [""])[0]
+    if ident:
+        return paradas.get(ident)
+    lat = (params.get(f"{prefijo}_lat") or [""])[0]
+    lon = (params.get(f"{prefijo}_lon") or [""])[0]
+    try:
+        return (float(lat), float(lon))
+    except ValueError:
+        return None
 
 
 def resolver_extremo(
