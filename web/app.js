@@ -14,9 +14,8 @@
     sin_datos: "sin datos de paso ahora mismo",
     fuera_de_servicio: "esa línea ya no pasa a estas horas",
   };
-  const BUSQUEDA_MIN_CARACTERES = 4;
+  const BUSQUEDA_MIN_CARACTERES = 3;
   const BUSQUEDA_ESPERA_MS = 200;
-  const BUSQUEDA_MS_ENTRE_PETICIONES = 1000;
   const BUSQUEDA_CACHE_MAX = 50;
 
   const CAPAS_TILES = {
@@ -682,7 +681,6 @@
   const temporizadoresBusqueda = {};
   // Texto ya buscado -> direcciones. Repetir una búsqueda sale al instante y sin petición.
   const cacheDirecciones = new Map();
-  let ultimaPeticionDirecciones = 0;
 
   function recordarDirecciones(clave, sitios) {
     if (cacheDirecciones.size >= BUSQUEDA_CACHE_MAX) {
@@ -691,12 +689,11 @@
     cacheDirecciones.set(clave, sitios);
   }
 
-  // Nominatim limita a una petición por segundo y prohíbe el autocompletado, así que la
-  // espera corta solo decide cuándo *querríamos* buscar: el hueco mínimo entre peticiones
-  // es lo que garantiza no pasarse. Una consulta que cae dentro de ese hueco no se
-  // descarta, se retrasa, y sale con el último texto escrito. Menos de 4 caracteres no se
-  // consulta. Al volver se comprueba que el texto siga igual, porque una respuesta lenta
-  // de una consulta anterior podría pisar los resultados de la actual.
+  // El geocodificador admite buscar mientras se escribe, así que ya no hace falta el
+  // hueco de un segundo entre peticiones que exigía el anterior. Queda una espera corta
+  // por cortesía —una petición por tecla sería abusar de un servicio gratuito— y la
+  // caché, que hace instantáneo repetir una búsqueda. Al volver se comprueba que el
+  // texto siga igual: una respuesta lenta de antes podría pisar los resultados de ahora.
   function buscarDirecciones(campo, texto, sigueVigente, alTener) {
     clearTimeout(temporizadoresBusqueda[campo]);
     const clave = texto.trim().toLowerCase();
@@ -709,9 +706,7 @@
       return;
     }
     alTener("buscando", []);
-    const hueco = BUSQUEDA_MS_ENTRE_PETICIONES - (Date.now() - ultimaPeticionDirecciones);
     temporizadoresBusqueda[campo] = setTimeout(async () => {
-      ultimaPeticionDirecciones = Date.now();
       let encontradas = [];
       let respondio = false;
       try {
@@ -726,7 +721,7 @@
       // Un fallo no se guarda: si no, un corte de red dejaría ese texto vacío para siempre.
       if (respondio) recordarDirecciones(clave, encontradas);
       if (sigueVigente()) alTener("listo", encontradas);
-    }, Math.max(BUSQUEDA_ESPERA_MS, hueco));
+    }, BUSQUEDA_ESPERA_MS);
   }
 
   function renderBusquedaCL(cont, campo, texto) {

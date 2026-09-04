@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from badabus import bus_data_api as api
-from badabus import dia, frecuencias, nominatim, planner, ranking
+from badabus import dia, frecuencias, geocoder, planner, ranking
 
 # Solo local por defecto. Para abrirlo a la red, BADABUS_HOST=0.0.0.0 en el .env.
 HOST_POR_DEFECTO = "127.0.0.1"
@@ -218,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, b"[]", "application/json; charset=utf-8")
             return
         try:
-            sitios = nominatim.buscar(texto)
+            sitios = geocoder.buscar(texto)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             print(f"  ! error buscando la dirección {texto!r}: {exc}")
             self.fail(502, "no se pudo buscar la dirección")
@@ -237,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(400, "lat y lon deben ser números")
             return
         try:
-            nombre = nominatim.direccion(lat, lon)
+            nombre = geocoder.direccion(lat, lon)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # Sin nombre la ruta se calcula igual: no merece un error.
             print(f"  ! no se pudo nombrar el punto {lat},{lon}: {exc}")
