@@ -7,18 +7,18 @@ de rutas; en castellano o en inglés, y en claro u oscuro.
 Cada parada dice qué líneas pasan y en cuánto. Ese dato es el único de todo el
 proyecto que viene medido y no estimado.
 
-![Una parada abierta en el mapa, con las seis líneas que pasan por ella y los minutos que faltan para cada una](capturas/stop-arrivals.png)
+![Una parada abierta en el mapa, con las seis líneas que pasan por ella y los minutos que faltan para cada una](screenshots/stop-arrivals.png)
 
 De un punto a otro se ofrecen varias formas de llegar, ordenadas por lo que se tarda
 de verdad: andar hasta la parada, esperar y viajar. Cuando no se puede cerrar un
 total, se dice —*"you cannot make the next one"*— en vez de enseñar un número que no
 se sostiene. De eso trata media documentación de más abajo.
 
-![El planificador con tres alternativas entre dos puntos de la ciudad, con sus transbordos, y dos de ellas dibujadas sobre el mapa](capturas/route-options.png)
+![El planificador con tres alternativas entre dos puntos de la ciudad, con sus transbordos, y dos de ellas dibujadas sobre el mapa](screenshots/route-options.png)
 
 Y cualquier línea puede verse entera, con su sentido de marcha y sus paradas.
 
-![El recorrido completo de una línea circular dibujado sobre el mapa de la ciudad, con flechas de sentido](capturas/line-shape.png)
+![El recorrido completo de una línea circular dibujado sobre el mapa de la ciudad, con flechas de sentido](screenshots/line-shape.png)
 
 ## Requisitos
 Python 3.10+ (solo biblioteca estándar; sin `pip install`).
