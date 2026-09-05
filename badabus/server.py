@@ -66,7 +66,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(200, body, content_type)
 
     def handle_tiempos(self, stop_id: str) -> None:
-        if not stop_id.isdigit():
+        # isdigit() acepta dígitos que no son ASCII ("²" cuela): eso subiría tal
+        # cual al servicio ajeno en vez de responder un 400 aquí.
+        if not (stop_id.isascii() and stop_id.isdigit()):
             self.fail(400, "id de parada invalido")
             return
         try:
@@ -348,7 +350,7 @@ def resolver_extremo(
     """
     ident = (params.get(prefijo) or [""])[0]
     if ident:
-        if not ident.isdigit():
+        if not (ident.isascii() and ident.isdigit()):
             raise ValueError(f"{prefijo} debe ser un id de parada")
         aqui = paradas.get(ident)
         if aqui is None:

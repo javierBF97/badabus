@@ -76,7 +76,11 @@ def planificar_muchos(
         for parada, llegadas in etiquetas.items():
             for origen, camino in llegadas:
                 for punto in _puntos_de_subida(parada, camino, vecinas, pos):
-                    for lin in por_parada.get(punto, ()):
+                    # Ordenado: `por_parada` guarda conjuntos, y su orden cambia de
+                    # una ejecución a otra. Con el cupo por parada, ese orden decide
+                    # qué caminos se recuerdan, así que la misma consulta podía dar
+                    # resultados distintos.
+                    for lin in sorted(por_parada.get(punto, ())):
                         # Nadie coge dos veces la misma línea en un viaje.
                         if any(t["linea"] == lin for t in camino):
                             continue
