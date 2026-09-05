@@ -1,14 +1,83 @@
 # badabus
 
 Proyecto exploratorio, no oficial, sobre los datos del servicio de autobús urbano
-de Badajoz.
+de Badajoz. Un mapa con las paradas, los tiempos de paso en vivo y un planificador
+de rutas; en castellano o en inglés, y en claro u oscuro.
+
+Cada parada dice qué líneas pasan y en cuánto. Ese dato es el único de todo el
+proyecto que viene medido y no estimado.
+
+![Una parada abierta en el mapa, con las seis líneas que pasan por ella y los minutos que faltan para cada una](capturas/stop-arrivals.png)
+
+De un punto a otro se ofrecen varias formas de llegar, ordenadas por lo que se tarda
+de verdad: andar hasta la parada, esperar y viajar. Cuando no se puede cerrar un
+total, se dice —*"you cannot make the next one"*— en vez de enseñar un número que no
+se sostiene. De eso trata media documentación de más abajo.
+
+![El planificador con tres alternativas entre dos puntos de la ciudad, con sus transbordos, y dos de ellas dibujadas sobre el mapa](capturas/route-options.png)
+
+Y cualquier línea puede verse entera, con su sentido de marcha y sus paradas.
+
+![El recorrido completo de una línea circular dibujado sobre el mapa de la ciudad, con flechas de sentido](capturas/line-shape.png)
 
 ## Requisitos
 Python 3.10+ (solo biblioteca estándar; sin `pip install`).
 
-## Estado
-En desarrollo incremental. El uso y la arquitectura se documentarán aquí a
-medida que se añadan las piezas.
+## Uso
+`badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
+(`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
+```
+python -m badabus.collector
+```
+
+## Servidor
+`badabus/server.py` levanta un servidor local (`http.server`) que por defecto solo
+acepta conexiones de este equipo, con estas rutas:
+
+- `GET /data/<paradas|lineas|red|shapes|dias>.json` — sirve la red generada por el recolector.
+- `GET /api/parada/<id>` — próximas llegadas a una parada (dato en vivo).
+- `GET /api/dia` — tipo de día vigente (laborable, sábado o domingo/festivo).
+- `GET /api/plan?origen=<id>&destino=<id>` — rutas entre dos paradas, con transbordos si hacen
+  falta, ordenadas por tiempo estimado y con la espera del próximo bus. Cada extremo acepta
+  también coordenadas (`origen_lat`/`origen_lon`), para partir de una dirección o de un punto
+  del mapa en vez de una parada.
+- `GET /api/buscar?q=<texto>` — direcciones de Badajoz que coinciden con el texto.
+- `GET /api/direccion?lat=<lat>&lon=<lon>` — nombre del sitio que hay en unas coordenadas.
+- `GET /api/config` — ajustes que el navegador necesita y no viven en el código.
+
+Arrancarlo:
+```
+python -m badabus.server
+```
+
+### El servidor actúa como proxy para evitar el CORS
+
+```
+[Navegador: página en localhost:8000]
+        │  fetch("/api/parada/202")   ← MISMO origen (localhost:8000) → permitido sin más
+        ▼
+[Nuestro servidor Python en localhost:8000]
+        │  urllib → https://tubasa.autobus.cloud/...   ← servidor→servidor, SIN navegador → sin CORS
+        ▼
+[API del servicio]  →  responde los datos  →  el servidor se los devuelve a la página
+```
+
+## Configuración
+Los ajustes locales van en un `.env` en la raíz, que no se sube al repositorio. `.env.example`
+lista los disponibles:
+
+- `CARTO_API_KEY` — clave gratuita de los mapas base. Sin ella el mapa funciona igual, pero
+  se ve con marca de agua.
+- `BADABUS_HOST` — dirección en la que escucha el servidor. Sin tocarlo solo atiende a este
+  equipo. Puesto a `0.0.0.0` se abre a la red local, para probar la app desde el móvil, e
+  imprime al arrancar la dirección a la que conectarse. Hazlo solo en redes de confianza:
+  queda expuesta a quien esté en esa red.
+
+## Cómo se ha construido
+
+Lo que sigue es la bitácora del proyecto, y se lee como tal: cuenta lo que se probó, lo
+que se midió y lo que salió mal, **sin borrar los pasos intermedios**. Casi nada salió
+como se esperaba, y esa es la parte que merece la pena contar.
 
 ## Exploración
 Esta herramienta nace de explorar los datos del servicio de autobús urbano de
@@ -44,7 +113,6 @@ un factor de callejeo, porque el peatón tampoco atraviesa edificios. Sirve para
 alternativas y dar una idea, no es un tiempo real de caminata.
 
 ## Direcciones
-
 Nadie piensa un viaje en paradas: piensa en "quiero ir a tal calle". Traducir una cosa en la
 otra necesita un geocodificador, y elegirlo llevó su comparación.
 
@@ -86,7 +154,6 @@ prueban varias paradas próximas y se deja que el ranking decida, con el tiempo 
 sumado al total.
 
 ## Cómo se buscan las rutas
-
 Esta parte se ha medido más que decidido, y conviene dejar constancia de lo que se probó,
 porque casi nada salió como se esperaba.
 
@@ -122,7 +189,6 @@ líneas recorren exactamente el mismo tramo, en lugar de descartar una se enseñ
 sirve la primera que pase, y saberlo acorta la espera.
 
 ## Lo que no se sabe, no se inventa
-
 Esta parte ha ido por pasos, y cada uno salió de comprobar el anterior. Se cuentan todos
 porque el camino explica el resultado mejor que el resultado solo.
 
@@ -231,8 +297,30 @@ como **48**. Había un test que fijaba el número equivocado, así que el fallo 
 protegido: se corrigió explicando por qué, y se añadió el caso complementario para que las
 dos ramas no puedan volver a discrepar.
 
-## Frecuencias de paso
+**Paso 11 — el sesgo del Paso 1 seguía vivo, un piso más abajo.** Una revisión externa
+lo destapó: el Paso 3 dejó de *afirmar* la espera desconocida, pero el número que se
+usaba para **decidir** seguía siendo cero. Y cero no es neutro, es el mejor valor
+posible, así que la ruta peor conocida ganaba siempre. Medido: una línea con dato en
+vivo, cierta en 15 minutos, **desaparecía de la pantalla** frente a otra sin dato cuyo
+suelo era 3 —y de la que se sabía, y se escribía en la tarjeta, que podía tardar 20—.
+No quedaba segunda: la regla de descartar dominadas la borraba.
 
+El arreglo son dos números donde antes había uno. **El que se enseña** sigue siendo el
+suelo honesto, con su "desde X min". **El que decide** usa la espera que cabe esperar:
+media frecuencia si se publica —la misma regla que el Paso 6 ya aplicaba a los
+transbordos—, y 15 minutos si no, que es la mitad de la frecuencia mediana publicada.
+
+Y una segunda regla, porque la primera no bastaba: **una ruta cuya espera no se sabe no
+puede descartar a una que sí la sabe.** Puede ir por delante, que es lo que dice el
+valor esperado, pero borrar una certeza apoyándose en una estimación es cambiar de
+sitio el mismo error, no arreglarlo.
+
+Lo que más enseña de este paso no es el fallo, es dónde estaba: el README lo había
+diagnosticado bien, con estas palabras —"premiaba a las rutas peor conocidas"—, y la
+corrección se aplicó a la capa que se ve. **Diez pasos argumentando un sesgo no impiden
+dejarlo dentro**, si se arregla la frase en vez de la decisión.
+
+## Frecuencias de paso
 El servicio no publica sus frecuencias en ninguna API: están en su web como **imágenes**, una
 por línea, con la hora de inicio, la de fin, cada cuánto pasa y en qué minutos sale de
 cabecera. Ese dato es lo único que permite estimar cuándo pasa el **siguiente** bus, porque el
@@ -278,7 +366,6 @@ Se publican como imágenes sin número de versión, así que **caduca sin avisar
 `transcrito` guarda la fecha en que se copió.
 
 ## Transbordar andando
-
 Un transbordo exigía que las dos líneas parasen **en el mismo sitio**. En la calle no
 funciona así: te bajas, cruzas o andas cincuenta metros, y coges otra línea.
 
@@ -359,58 +446,7 @@ lleva corrigiendo desde el principio.
 Buscar pasa de 44 a **272 ms**. Es el precio de mirar seis veces más rutas, y donde más se
 nota es en las zonas con poca frecuencia, que es justo donde hacía falta.
 
-## Uso
-`badabus/collector.py` descarga líneas, paradas y trazados y guarda la red en `data/`
-(`paradas.json`, `lineas.json`, `red.json`, `shapes.json`, `dias.json`). Para (re)generar los datos:
-```
-python -m badabus.collector
-```
-
-## Servidor
-`badabus/server.py` levanta un servidor local (`http.server`) que por defecto solo
-acepta conexiones de este equipo, con estas rutas:
-
-- `GET /data/<paradas|lineas|red|shapes|dias>.json` — sirve la red generada por el recolector.
-- `GET /api/parada/<id>` — próximas llegadas a una parada (dato en vivo).
-- `GET /api/dia` — tipo de día vigente (laborable, sábado o domingo/festivo).
-- `GET /api/plan?origen=<id>&destino=<id>` — rutas entre dos paradas, con transbordos si hacen
-  falta, ordenadas por tiempo estimado y con la espera del próximo bus. Cada extremo acepta
-  también coordenadas (`origen_lat`/`origen_lon`), para partir de una dirección o de un punto
-  del mapa en vez de una parada.
-- `GET /api/buscar?q=<texto>` — direcciones de Badajoz que coinciden con el texto.
-- `GET /api/direccion?lat=<lat>&lon=<lon>` — nombre del sitio que hay en unas coordenadas.
-- `GET /api/config` — ajustes que el navegador necesita y no viven en el código.
-
-Arrancarlo:
-```
-python -m badabus.server
-```
-
-### El servidor actúa como proxy para evitar el CORS
-
-```
-[Navegador: página en localhost:8000]
-        │  fetch("/api/parada/202")   ← MISMO origen (localhost:8000) → permitido sin más
-        ▼
-[Nuestro servidor Python en localhost:8000]
-        │  urllib → https://tubasa.autobus.cloud/...   ← servidor→servidor, SIN navegador → sin CORS
-        ▼
-[API del servicio]  →  responde los datos  →  el servidor se los devuelve a la página
-```
-
-## Configuración
-Los ajustes locales van en un `.env` en la raíz, que no se sube al repositorio. `.env.example`
-lista los disponibles:
-
-- `CARTO_API_KEY` — clave gratuita de los mapas base. Sin ella el mapa funciona igual, pero
-  se ve con marca de agua.
-- `BADABUS_HOST` — dirección en la que escucha el servidor. Sin tocarlo solo atiende a este
-  equipo. Puesto a `0.0.0.0` se abre a la red local, para probar la app desde el móvil, e
-  imprime al arrancar la dirección a la que conectarse. Hazlo solo en redes de confianza:
-  queda expuesta a quien esté en esa red.
-
 ## Limitaciones
-
 Los minutos que se enseñan salen de estimaciones, y conviene decir de cuáles.
 
 **No hay ruteador peatonal.** Cada caminata es la distancia en línea recta multiplicada por
