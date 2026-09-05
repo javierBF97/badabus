@@ -315,6 +315,38 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(len(salida), 1)
         self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
 
+    def test_una_espera_desconocida_no_borra_una_conocida(self):
+        # El sesgo de contar cero cuando no se sabe la espera: la ruta peor conocida
+        # salia con el total mas bajo posible y descartaba a las demas por dominarlas.
+        # B, sin dato, llegaba a borrar de la pantalla a A, cierta en 15 minutos.
+        # Ahora B puede ir delante —en valor esperado lo es— pero A se sigue ofreciendo.
+        red = {"A": ["1", "2"], "B": ["3", "2"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.960), "3": (38.8801, -6.9701)}
+        horarios = {lin: {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}
+                    for lin in ("A", "B")}
+        rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}],
+                 [{"linea": "B", "subir": "3", "bajar": "2"}]]
+        salida = ranking.puntuar(
+            rutas, red, paradas, {"1": {"A": 12.0}},
+            horarios=horarios, tipo_dia="LV", ahora_min=10 * 60,
+        )
+        lineas = [r["tramos"][0]["linea"] for r in salida]
+        self.assertIn("A", lineas)
+        # Y la que se ensena de A sigue siendo su total cerrado, no una estimacion.
+        cerrada = next(r for r in salida if r["tramos"][0]["linea"] == "A")
+        self.assertEqual(cerrada["espera_min"], 12)
+
+    def test_la_desconocida_no_se_ordena_como_si_pasara_ya(self):
+        # Sin frecuencia publicada no hay cota, asi que se supone ESPERA_SIN_DATO_MIN.
+        # Con eso, una ruta sin dato deja de ganarle a una conocida mas rapida que esa
+        # suposicion: antes ganaba siempre, porque su espera valia cero.
+        red = {"A": ["1", "2"], "B": ["3", "2"]}
+        paradas = {"1": (38.880, -6.970), "2": (38.880, -6.960), "3": (38.8801, -6.9701)}
+        rutas = [[{"linea": "B", "subir": "3", "bajar": "2"}],
+                 [{"linea": "A", "subir": "1", "bajar": "2"}]]
+        salida = ranking.puntuar(rutas, red, paradas, {"1": {"A": 1.0}})
+        self.assertEqual(salida[0]["tramos"][0]["linea"], "A")
+
     def test_una_linea_parada_no_desplaza_a_una_que_circula(self):
         # La A no pasa a esa hora y la C si. Aunque la A saliera mejor por tiempo, no
         # es una alternativa: la que se puede coger va primero.

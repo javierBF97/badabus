@@ -2,6 +2,7 @@ import json
 import math
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from badabus import frecuencias as frec
 
@@ -18,6 +19,11 @@ RADIO_PARADAS_KM = 1.0         # tope de cordura al buscar paradas cercanas
 RADIO_TRANSBORDO_KM = 0.3      # hasta donde se anda entre paradas para transbordar
 MARGEN_LLEGADA_MIN = 2         # margen para dar un bus por cogido (andar es estimado)
 ESPERA_TRANSBORDO_MIN = 5      # lo que se supone en un transbordo sin frecuencia conocida
+# Lo que se supone que se espera un bus del que no se sabe nada y cuya frecuencia
+# tampoco se publica. Es la mitad de la frecuencia mediana publicada (30 min), que es
+# lo esperable al llegar a la parada en un momento cualquiera. No es un dato: es la
+# alternativa menos mala a contar cero, que es lo unico que seguro esta mal.
+ESPERA_SIN_DATO_MIN = 15
 
 RADIO_TIERRA_KM = 6371.0
 
@@ -229,17 +235,49 @@ def esperas_por_linea(tiempos: list[dict]) -> dict[str, float]:
     return esperas
 
 
-def _orden(p: tuple) -> tuple:
-    """Por tiempo, y a igualdad de tiempo menos transbordos.
+class Puntuada(NamedTuple):
+    """Una ruta ya medida, con **dos** totales, que no son el mismo numero.
+
+    `total` es lo que se ensena. Con la espera desconocida es un suelo, y la tarjeta lo
+    dice ("desde X min"): no se afirma lo que no se sabe.
+
+    `comparable` es lo que decide el orden, quien domina a quien y que se descarta por
+    ser mucho peor. Ahi el suelo no vale: contar cero cuando no se sabe la espera hace
+    que la ruta peor conocida gane siempre, porque cero es el mejor numero posible. Una
+    ruta con "hasta 20 min de espera" llegaba a borrar de la pantalla otra de 15
+    minutos ciertos. La estimacion sigue la regla que ya se usaba en los transbordos:
+    media frecuencia si se publica, y si no una cifra fija.
+    """
+
+    total: float
+    comparable: float
+    viaje: float
+    espera: float | None
+    tope: float | None
+    andando: float
+    transbordo: float
+    aviso: str | None
+    ruta: list
+
+
+def _espera_estimada(espera: float | None, tope: float | None) -> float:
+    """Lo que se espera de verdad, para comparar. Nunca cero por no saberlo."""
+    if espera is not None:
+        return espera
+    return tope / 2 if tope else ESPERA_SIN_DATO_MIN
+
+
+def _orden(p: Puntuada) -> tuple:
+    """Por tiempo estimado, y a igualdad de tiempo menos transbordos.
 
     El desempate no es cosmetico: sin el, "coge la M4 y luego otro bus" puede colarse
     por delante de la M4 a secas y la regla que descarta rodeos no llega a verla.
     """
-    return (p[0], len(p[-1]))
+    return (p.comparable, len(p.ruta))
 
 
-def _circula(p: tuple) -> bool:
-    return p[6] != "fuera_de_servicio"
+def _circula(p: Puntuada) -> bool:
+    return p.aviso != "fuera_de_servicio"
 
 
 def _fusionar_por_paradas(puntuadas: list) -> list:
@@ -253,26 +291,27 @@ def _fusionar_por_paradas(puntuadas: list) -> list:
     for p in puntuadas:
         # Una linea que no circula no es intercambiable con una que si: presentarlas
         # juntas ("coge la primera que pase") seria mentir. Se agrupan por separado.
-        clave = (tuple((t["subir"], t["bajar"]) for t in p[-1]), p[6] == "fuera_de_servicio")
+        clave = (tuple((t["subir"], t["bajar"]) for t in p.ruta),
+                 p.aviso == "fuera_de_servicio")
         grupos.setdefault(clave, []).append(p)
 
     salida = []
     for miembros in grupos.values():
         base = miembros[0]
-        lineas_base = [t["linea"] for t in base[-1]]
+        lineas_base = [t["linea"] for t in base.ruta]
         otras: dict[int, set] = {}
         for otro in miembros[1:]:
-            lineas = [t["linea"] for t in otro[-1]]
+            lineas = [t["linea"] for t in otro.ruta]
             distintas = [i for i, (a, b) in enumerate(zip(lineas_base, lineas, strict=True)) if a != b]
             if len(distintas) == 1:
                 otras.setdefault(distintas[0], set()).add(lineas[distintas[0]])
             else:
                 salida.append(otro)
         if otras:
-            tramos = [dict(t) for t in base[-1]]
+            tramos = [dict(t) for t in base.ruta]
             for i, lineas in otras.items():
                 tramos[i]["alternativas"] = sorted(lineas)
-            base = (*base[:-1], tramos)
+            base = base._replace(ruta=tramos)
         salida.append(base)
     salida.sort(key=_orden)
     return salida
@@ -284,12 +323,18 @@ def _sin_dominadas(puntuadas: list) -> list:
     Si otra llega antes, te hace andar menos y con menos transbordos, esta no es una
     alternativa: no hay a quien le convenga. Descartarlas no exige decidir cuanto vale
     andar frente a esperar, que seria opinable; basta con que otra le gane en las tres.
+
+    Se compara con `comparable`, no con lo que se ensena. Y una ruta cuya espera no se
+    sabe **no puede descartar a una que si la sabe**, por buena que salga su estimacion:
+    eso seria borrar una certeza apoyandose en una suposicion. Puede ir delante, que es
+    lo que dice el valor esperado, pero la otra se sigue ofreciendo.
     """
-    aceptadas: list[tuple] = []
+    aceptadas: list[Puntuada] = []
     for p in puntuadas:
-        total, andando, saltos = p[0], p[4], len(p[-1])
+        total, andando, saltos = p.comparable, p.andando, len(p.ruta)
         if any(
-            q[0] <= total and q[4] <= andando and len(q[-1]) <= saltos
+            q.comparable <= total and q.andando <= andando and len(q.ruta) <= saltos
+            and not (q.espera is None and p.espera is not None)
             for q in aceptadas
         ):
             continue
@@ -304,10 +349,10 @@ def _sin_rodeos(puntuadas: list) -> list:
     tarde al mismo sitio. Llegan ordenadas por tiempo, asi que cualquier ruta que
     empiece por una ya aceptada es peor por definicion.
     """
-    aceptadas: list[tuple] = []
+    aceptadas: list[Puntuada] = []
     lineas_ok: list[tuple] = []
     for p in puntuadas:
-        lineas = tuple(t["linea"] for t in p[-1])
+        lineas = tuple(t["linea"] for t in p.ruta)
         if any(lineas[:len(corta)] == corta for corta in lineas_ok):
             continue
         aceptadas.append(p)
@@ -321,12 +366,12 @@ def _una_por_combinacion(puntuadas: list) -> list:
     La misma combinación cogida en otra parada es el mismo viaje andando de más, no
     una alternativa. Llegan ordenadas por tiempo, así que la primera es la buena.
     """
-    vistas: dict[tuple, tuple] = {}
+    vistas: dict[tuple, Puntuada] = {}
     for p in puntuadas:
         # Por el CONJUNTO de lineas de cada tramo: tras fusionar alternativas, "C2 o 5"
         # y "5 o C2" son el mismo viaje aunque cambie cual figura primero.
         clave = tuple(
-            frozenset([t["linea"], *t.get("alternativas", [])]) for t in p[-1]
+            frozenset([t["linea"], *t.get("alternativas", [])]) for t in p.ruta
         )
         vistas.setdefault(clave, p)
     return list(vistas.values())
@@ -542,14 +587,15 @@ def puntuar(
             ruta, red, paradas, esperas, horarios or {}, tipo_dia, ahora_min,
             hasta_la_parada + (espera or 0), reales,
         )
+        # Dos totales a proposito: el suelo que se ensena y el estimado que decide.
+        # Ver `Puntuada`.
         total = viaje + andando + (espera or 0) + transbordo
-        puntuadas.append((total, viaje, espera, tope, andando, transbordo, aviso, ruta))
+        comparable = viaje + andando + _espera_estimada(espera, tope) + transbordo
+        puntuadas.append(Puntuada(
+            total, comparable, viaje, espera, tope, andando, transbordo, aviso, ruta))
 
     if not puntuadas:
         return []
-    # Una linea que no circula a esta hora no es una alternativa: va detras de todo, por
-    # buena que parezca. Se sigue mostrando para que se vea por que no sirve, pero nunca
-    # desplaza a una ruta que si se puede coger.
     # Una linea que no circula a esta hora no es una alternativa: fuera. Si no queda
     # ninguna se devuelven igual, para poder explicar por que en vez de decir que no
     # hay ruta, que seria falso: la hay, pero no ahora.
@@ -561,28 +607,27 @@ def puntuar(
     puntuadas = _sin_dominadas(
         _sin_rodeos(_una_por_combinacion(_fusionar_por_paradas(puntuadas)))
     )
-    mejor = puntuadas[0][0]
+    mejor = puntuadas[0].comparable
     # Primero se descartan las mucho peores, y solo después se recorta: si no,
     # una ruta buena podría quedar fuera del límite por culpa de otra que luego
     # se descarta.
-    aceptables = [p for p in puntuadas if p[0] <= mejor * FACTOR_INFUMABLE]
+    aceptables = [p for p in puntuadas if p.comparable <= mejor * FACTOR_INFUMABLE]
     return [
         {
-            "tramos": ruta,
+            "tramos": p.ruta,
             # Con la espera desconocida el total es un suelo, no una promesa: el
             # frontend lo dice ("desde X"), y `aviso_espera` explica por qué.
-            "total_min": round(total),
-            "viaje_min": round(viaje),
-            "espera_min": round(espera) if espera is not None else None,
+            "total_min": round(p.total),
+            "viaje_min": round(p.viaje),
+            "espera_min": round(p.espera) if p.espera is not None else None,
             # Lo más que puede tardar cuando no se sabe la espera pero sí la frecuencia.
-            "espera_max_min": round(tope) if tope is not None else None,
+            "espera_max_min": round(p.tope) if p.tope is not None else None,
             # Lo que se espera en los transbordos, ya dentro del total.
-            "espera_transbordo_min": round(transbordo) if transbordo else None,
-            "andando_min": round(andando) if hay_caminata else None,
-            "aviso_espera": aviso,
+            "espera_transbordo_min": round(p.transbordo) if p.transbordo else None,
+            "andando_min": round(p.andando) if hay_caminata else None,
+            "aviso_espera": p.aviso,
         }
-        for total, viaje, espera, tope, andando, transbordo, aviso, ruta
-        in aceptables[:LIMITE_RUTAS]
+        for p in aceptables[:LIMITE_RUTAS]
     ]
 
 
