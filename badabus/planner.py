@@ -3,10 +3,10 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-# Cuántas formas de llegar se recuerdan por parada mientras se busca. Enumerarlas
-# todas es exponencial y, medido, además empeora el resultado: llena las mejores
-# posiciones con variantes del mismo viaje. Recordar unas pocas es más rápido y
-# deja ver alternativas de verdad.
+# How many ways to arrive are kept per stop during the search. To enumerate them all
+# is exponential and, measured, it also gives a worse result: it fills the top places
+# with variants of the same trip. To keep a few is faster and lets the real
+# alternatives show.
 CAMINOS_POR_PARADA = 8
 
 
@@ -17,10 +17,10 @@ def cargar_datos(data_dir: Path = DATA_DIR) -> tuple[dict, dict]:
 
 
 def _indexar(red: dict, activas) -> tuple[dict, dict, dict]:
-    """Índice de la red activa: recorridos, líneas por parada y posición en cada línea.
+    """Index of the active network: sequences, lines per stop and position in each line.
 
-    `pos` guarda la primera aparición de una parada en una línea, que es lo que
-    miraba `list.index()`, para no recorrer la lista en cada consulta.
+    `pos` holds the first occurrence of a stop in a line, which is what `list.index()`
+    looks up, so the list is not walked on every query.
     """
     seq = {lin: red[lin] for lin in set(activas) if lin in red}
     por_parada: dict[str, set] = {}
@@ -33,17 +33,17 @@ def _indexar(red: dict, activas) -> tuple[dict, dict, dict]:
 
 
 def _puntos_de_subida(parada: str, camino: tuple, vecinas: dict, pos: dict) -> list[str]:
-    """Dónde se puede subir al bajar aquí: esta parada, y las que quedan a un paseo.
+    """Where you can board after you alight here: this stop, and the ones within a walk.
 
-    **No se anda a una parada por la que pase el bus del que acabas de bajar.** Si pasa
-    antes, ir hasta ella es deshacer camino; si pasa después, bastaba con seguir sentado.
-    Andar doscientos metros para hacer lo que el bus hace en dos paradas no es una ruta,
-    y el planificador la prefería porque mide el coste en paradas recorridas: bajarse
-    antes le salía más barato.
+    **You do not walk to a stop that the bus you just left also calls at.** If it calls
+    there earlier, walking to it undoes your own trip. If it calls there later, staying
+    on board is enough. To walk two hundred metres to do what the bus does in two stops
+    is not a route, and the planner prefers it, because it measures cost in stops
+    ridden: to alight early looks cheaper.
 
-    Cruzar la calle sí vale, porque las dos aceras son paradas distintas y el sentido
-    que quieres puede ser el otro: lo que se descarta es la parada que ya está en el
-    recorrido, no la de enfrente.
+    To cross the street is fine, because the two pavements are different stops and the
+    direction you want can be the other one. What is dropped is the stop that is already
+    on the route, not the one across from it.
     """
     puntos = [parada]
     if not vecinas or not camino:
@@ -59,11 +59,11 @@ def planificar_muchos(
     origenes, destinos, red: dict, activas, max_transbordos: int = 2,
     vecinas: dict | None = None,
 ) -> list[list[dict]]:
-    """Rutas desde cualquiera de `origenes` hasta cualquiera de `destinos`.
+    """Routes from any of `origenes` to any of `destinos`.
 
-    Busca por rondas, y cada ronda es un bus más. Una ronda recorre la red una
-    sola vez, salgan de una parada o de setenta, así que el coste no crece con el
-    número de pares origen-destino. Cada ruta es una lista de tramos
+    The search runs in rounds, and each round is one more bus. A round walks the network
+    once, whether you start from one stop or from seventy, so the cost does not grow
+    with the number of origin-destination pairs. Each route is a list of legs
     {linea, subir, bajar}.
     """
     seq, por_parada, pos = _indexar(red, activas)
@@ -76,19 +76,19 @@ def planificar_muchos(
         for parada, llegadas in etiquetas.items():
             for origen, camino in llegadas:
                 for punto in _puntos_de_subida(parada, camino, vecinas, pos):
-                    # Ordenado: `por_parada` guarda conjuntos, y su orden cambia de
-                    # una ejecución a otra. Con el cupo por parada, ese orden decide
-                    # qué caminos se recuerdan, así que la misma consulta podía dar
-                    # resultados distintos.
+                    # Sorted: `por_parada` holds sets, and their order changes from
+                    # one run to the next. With the cap per stop, that order decides
+                    # which paths are kept, so the same query can give different
+                    # results.
                     for lin in sorted(por_parada.get(punto, ())):
-                        # Nadie coge dos veces la misma línea en un viaje.
+                        # Nobody takes the same line twice in one trip.
                         if any(t["linea"] == lin for t in camino):
                             continue
                         i = pos.get((lin, punto))
                         if i is None:
                             continue
                         for bajada in seq[lin][i + 1:]:
-                            # Volver al punto de partida no es un viaje (circulares).
+                            # To come back to the starting point is not a trip (circular lines).
                             if origen == bajada:
                                 continue
                             ruta = (*camino, _tramo(lin, punto, bajada))
@@ -107,11 +107,11 @@ def planificar_muchos(
 def planificar(
     origen: str, destino: str, red: dict, activas, max_transbordos: int = 2
 ) -> list[list[dict]]:
-    """Rutas de la parada origen a la parada destino con <= max_transbordos.
+    """Routes from the origin stop to the destination stop with <= max_transbordos.
 
-    Cada ruta es una lista de tramos {linea, subir, bajar}. Se devuelven las mejores
-    (primero menos transbordos, luego menos paradas). `activas` son los códigos de las
-    líneas que circulan el día consultado.
+    Each route is a list of legs {linea, subir, bajar}. The best ones come back: fewer
+    transfers first, then fewer stops. `activas` are the codes of the lines that run on
+    the day queried.
     """
     if origen == destino:
         return []
@@ -129,11 +129,11 @@ def _paradas_tramo(tramo: dict, seq: dict) -> int:
 
 
 def _mejores(rutas: list, seq: dict, limite: int = 6) -> list:
-    """Las mejores rutas entre un origen y un destino concretos.
+    """The best routes between one specific origin and one specific destination.
 
-    Si se llega con menos transbordos, las opciones más largas sobran: nadie coge
-    dos buses donde uno le deja. Entre las que quedan, se prefiere la que pasa por
-    menos paradas y no se repite una misma combinación de líneas.
+    If you get there with fewer transfers, the longer options are surplus: nobody takes
+    two buses where one takes them. Among the rest, the route through fewer stops is
+    preferred, and the same combination of lines is not repeated.
     """
     if not rutas:
         return []
@@ -142,10 +142,11 @@ def _mejores(rutas: list, seq: dict, limite: int = 6) -> list:
     for ruta in rutas:
         if len(ruta) > minimo:
             continue
-        # El coste se mide en paradas recorridas, y andar no cuenta: bajarse antes para
-        # caminar sale "mas barato" aunque sean doscientos metros a pie. Por eso la
-        # version con transbordo en parada y la que anda no compiten aqui — se guarda la
-        # mejor de cada una y decide el ranking, que si conoce distancias y tiempos.
+        # The cost is measured in stops ridden, and walking does not count: to
+        # alight early and walk looks "cheaper" even for two hundred metres on foot.
+        # So the same-stop transfer and the walking one do not compete here. The best
+        # of each is kept, and the ranking decides, because it does know distances
+        # and times.
         clave = (
             tuple(t["linea"] for t in ruta),
             tuple(a["bajar"] != b["subir"] for a, b in zip(ruta, ruta[1:], strict=False)),

@@ -7,12 +7,12 @@ from badabus import bus_data_api as api
 
 
 def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict, dict, dict]:
-    """Descarga líneas, paradas y trazados; devuelve (paradas, meta, red, shapes).
+    """Downloads lines, stops and shapes. Returns (paradas, meta, red, shapes).
 
-    - paradas: dedup por stop_code, con las líneas que la sirven.
+    - paradas: deduplicated by stop_code, with the lines that serve each one.
     - meta: {lin: {color, nombre}}.
-    - red: {lin: [stop_code en orden de recorrido]}.
-    - shapes: {lin: {sentido: [[lat, lon], ...]}}.
+    - red: {lin: [stop_code in route order]}.
+    - shapes: {lin: {direction: [[lat, lon], ...]}}.
     """
     lineas = api.fetch_json("lineas", fetcher=fetcher)
     by_code: dict[str, dict] = {}
@@ -21,11 +21,11 @@ def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict
         try:
             paradas = api.fetch_json("paradas", fetcher=fetcher, linea=linea["id"])
         except (OSError, ValueError) as exc:
-            print(f"  ! fallo en línea {linea['id']}: {exc}")
+            print(f"  ! line {linea['id']} failed: {exc}")
             continue
         validas = [p for p in paradas if parada_valida(p)]
         if len(validas) < len(paradas):
-            print(f"  ! línea {linea['lin']}: {len(paradas) - len(validas)} paradas con datos inválidos, omitidas")
+            print(f"  ! line {linea['lin']}: {len(paradas) - len(validas)} stops with invalid data, skipped")
         red[linea["lin"]] = [
             p["stop_code"] for p in sorted(validas, key=lambda p: int(p["secuencia"]))
         ]
@@ -52,17 +52,17 @@ def collect(fetcher: Callable[..., bytes] = api.fetch) -> tuple[list[dict], dict
             puntos = api.fetch_shape(linea["id"], fetcher=fetcher)
             shapes[linea["lin"]] = api.parse_shape(puntos)
         except (OSError, ValueError, KeyError, TypeError) as exc:
-            print(f"  ! sin trazado para línea {linea['lin']}: {exc}")
+            print(f"  ! no shape for line {linea['lin']}: {exc}")
             continue
     return stops, meta, red, shapes
 
 
 def recolectar_dias(fetcher: Callable[..., bytes] = api.fetch) -> dict[str, list[str]]:
-    """Qué líneas circulan en cada tipo de día, según el endpoint de correspondencias.
+    """Which lines run on each day type, from the connections endpoint.
 
-    Devuelve {"LV": [lin, ...], "SAB": [...], "DOM": [...]}. Una línea que no circula
-    un día trae ese día como lista vacía en vez de dict, y por eso queda fuera de ese
-    día.
+    Returns {"LV": [lin, ...], "SAB": [...], "DOM": [...]}. A line that does not run on
+    a day brings that day as an empty list instead of a dict, and that is why it stays
+    out of that day.
     """
     lineas = api.fetch_json("lineas", fetcher=fetcher)
     por_dia: dict[str, list[str]] = {}
@@ -71,7 +71,7 @@ def recolectar_dias(fetcher: Callable[..., bytes] = api.fetch) -> dict[str, list
             _, data = api.fetch_correspondencias(linea["id"], fetcher=fetcher)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             print(
-                f"  ! sin correspondencias para línea "
+                f"  ! no connections for line "
                 f"{linea.get('lin', linea.get('id', '?'))}: {exc}"
             )
             continue
@@ -98,14 +98,14 @@ def main() -> None:
     dias = recolectar_dias()
     save_json(dias, str(data_dir / "dias.json"))
     print(
-        f"Guardadas {len(stops)} paradas, {len(meta)} líneas, {len(red)} recorridos, "
-        f"{len(shapes)} trazados y líneas por día "
-        f"({', '.join(f'{t}:{len(v)}' for t, v in sorted(dias.items()))}) en {data_dir}"
+        f"Saved {len(stops)} stops, {len(meta)} lines, {len(red)} sequences, "
+        f"{len(shapes)} shapes and the lines per day type "
+        f"({', '.join(f'{t}:{len(v)}' for t, v in sorted(dias.items()))}) in {data_dir}"
     )
 
 
 def parada_valida(parada: dict) -> bool:
-    """True si la parada trae los campos mínimos y parseables para construir la red."""
+    """True if the stop brings the minimum fields, parseable, to build the network."""
     try:
         int(parada["secuencia"])
         float(parada["lat"])

@@ -15,7 +15,7 @@ CARTO_PORTAL = [{"address": "CALLE MENACHO 12", "muni": "Badajoz",
 
 
 def responde(*respuestas):
-    """Un fetcher que devuelve cada respuesta en orden, y anota las urls pedidas."""
+    """A fetcher that returns each response in order, and records the urls asked for."""
     pendientes = list(respuestas)
     pedidas = []
 
@@ -42,7 +42,7 @@ class TestBuscar(unittest.TestCase):
         self.assertIn("photon", fake.pedidas[0])
 
     def test_acota_a_badajoz(self):
-        # Sin recuadro, una avenida con nombre de ciudad portuguesa se va a Portugal.
+        # Without the box, an avenue named after a Portuguese city goes to Portugal.
         fake = responde(PHOTON_CALLE)
         geocoder.buscar("Avenida de Elvas", fetcher=fake)
         self.assertIn("bbox", fake.pedidas[0])
@@ -63,7 +63,7 @@ class TestBuscar(unittest.TestCase):
         self.assertEqual(geocoder.buscar("Menacho", fetcher=fake), [])
 
     def test_no_repite_la_misma_calle(self):
-        # Photon devuelve varios tramos del mismo vial; en la lista sobran.
+        # Photon returns several segments of the same road: in the list they are surplus.
         tres = {"features": [{
             "geometry": {"coordinates": [-6.98 - i / 1000, 38.86]},
             "properties": {"street": "Paseo Condes de Barcelona", "city": "Badajoz"},

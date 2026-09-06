@@ -3,23 +3,23 @@ from collections.abc import Callable
 
 from badabus import bus_data_api as api
 
-# Tipo de día por día de la semana (lunes=0). No distingue festivos.
+# Day type by weekday (Monday=0). It does not tell holidays apart.
 TIPOS_SEMANA = ("LV", "LV", "LV", "LV", "LV", "SAB", "DOM")
 
 _cache: tuple[datetime.date, str, str] | None = None
 
 
 def tipo_dia_local(hoy: datetime.date | None = None) -> str:
-    """Tipo de día por calendario, sin consultar el servicio. No distingue festivos."""
+    """Day type from the calendar, without asking the service. It does not tell holidays apart."""
     return TIPOS_SEMANA[(hoy or datetime.date.today()).weekday()]
 
 
 def tipo_dia_actual(
     fetcher: Callable[..., bytes] = api.fetch, hoy: datetime.date | None = None
 ) -> tuple[str, str]:
-    """(tipo_dia, etiqueta) según el servicio, que sí distingue festivos.
+    """(tipo_dia, label) from the service, which does tell holidays apart.
 
-    Se cachea por fecha local: dentro del mismo día la respuesta no cambia.
+    It is cached by local date: within the same day the answer does not change.
     """
     global _cache
     hoy = hoy or datetime.date.today()
@@ -27,15 +27,15 @@ def tipo_dia_actual(
         return _cache[1], _cache[2]
     lineas = api.fetch_json("lineas", fetcher=fetcher)
     if not lineas:
-        raise ValueError("la API no devolvió líneas para consultar el tipo de día")
+        raise ValueError("the API returned no lines to ask the day type for")
     tipo, etiqueta = api.fetch_dia(lineas[0]["id"], fetcher=fetcher)
     if not tipo:
-        raise ValueError("la API no devolvió current_tipo_dia")
+        raise ValueError("the API returned no current_tipo_dia")
     _cache = (hoy, tipo, etiqueta)
     return tipo, etiqueta
 
 
 def limpiar_cache() -> None:
-    """Olvida el tipo de día cacheado (para los tests)."""
+    """Forgets the cached day type (for the tests)."""
     global _cache
     _cache = None

@@ -12,7 +12,7 @@ class TestDistanciaKm(unittest.TestCase):
         self.assertEqual(ranking.distancia_km((38.88, -6.97), (38.88, -6.97)), 0.0)
 
     def test_distancia_conocida(self):
-        # ~0.01° de longitud a lat 38.88 ≈ 0.87 km
+        # ~0.01° of longitude at lat 38.88 is about 0.87 km
         d = ranking.distancia_km((38.88, -6.97), (38.88, -6.96))
         self.assertAlmostEqual(d, 0.87, delta=0.03)
 
@@ -47,12 +47,12 @@ class TestMinutosViaje(unittest.TestCase):
         self.assertAlmostEqual(ranking.minutos_viaje(ruta, self.RED, paradas), esperado, places=6)
 
     def test_paradas_repetidas_ida_y_vuelta(self):
-        # Regresión: línea con paradas repetidas (ida y vuelta).
-        # Fija el comportamiento conocido: los índices se resuelven por
-        # PRIMERA aparición, así que un tramo del retorno se mide con más
-        # saltos que lo ideal. Esto es consistente con cómo el planificador
-        # construye sus tramos, pero no es lo idealmente deseado en términos
-        # de precisión de medida.
+        # Regression: a line with repeated stops, outward and back.
+        # It fixes the known behaviour: indexes resolve to the FIRST
+        # occurrence, so a return leg is measured with more hops than it
+        # should be. This is consistent with how the planner builds its legs,
+        # but it is not what is ideally wanted in terms of measurement
+        # accuracy.
         red = {"L1": ["A", "B", "C", "D", "C", "B", "A"]}
         paradas = {
             "A": (38.880, -6.970),
@@ -60,9 +60,9 @@ class TestMinutosViaje(unittest.TestCase):
             "C": (38.880, -6.950),
             "D": (38.880, -6.940),
         }
-        # Tramo de retorno: desde B (en la vuelta, índice 5) a A (índice 6).
-        # Pero seq.index("B") = 1 (primera aparición), así que se calcula
-        # de B(1) a A(6), recorriendo B->C->D->C->B->A (5 saltos).
+        # Return leg: from B, on the way back at index 5, to A at index 6.
+        # But seq.index("B") = 1, the first occurrence, so it is calculated
+        # from B(1) to A(6), through B->C->D->C->B->A, five hops.
         ruta = [{"linea": "L1", "subir": "B", "bajar": "A"}]
         km = (
             ranking.distancia_km(paradas["B"], paradas["C"])
@@ -75,7 +75,7 @@ class TestMinutosViaje(unittest.TestCase):
         self.assertAlmostEqual(ranking.minutos_viaje(ruta, red, paradas), esperado, places=6)
 
     def test_ruta_multi_tramo_suma_correctamente(self):
-        # Regresión: ruta de dos tramos (transbordo) suma correctamente.
+        # Regression: a two-leg route, with a transfer, adds up correctly.
         red = {
             "A": ["1", "2", "3"],
             "B": ["3", "4", "5"],
@@ -87,8 +87,8 @@ class TestMinutosViaje(unittest.TestCase):
             "4": (38.880, -6.940),
             "5": (38.880, -6.930),
         }
-        # Tramo 1: línea A, de 1 a 3.
-        # Tramo 2: línea B, de 3 a 5.
+        # Leg 1: line A, from 1 to 3.
+        # Leg 2: line B, from 3 to 5.
         ruta = [
             {"linea": "A", "subir": "1", "bajar": "3"},
             {"linea": "B", "subir": "3", "bajar": "5"},
@@ -140,7 +140,7 @@ class TestEsperasPorLinea(unittest.TestCase):
 
 
 class TestPuntuar(unittest.TestCase):
-    # A: 1->2 corto; B: 1->...->2 dando un rodeo largo.
+    # A: 1->2 short. B: 1->...->2 with a long detour.
     RED = {
         "A": ["1", "2"],
         "B": ["1", "9", "8", "7", "6", "2"],
@@ -180,7 +180,7 @@ class TestPuntuar(unittest.TestCase):
             {"tramos", "total_min", "viaje_min", "espera_min", "espera_max_min",
              "espera_transbordo_min", "andando_min", "aviso_espera"},
         )
-        # El total se redondea entero, no como suma de redondeos: puede bailar un minuto.
+        # The total is rounded whole, not as a sum of roundings: it can move by a minute.
         suma = salida[0]["viaje_min"] + salida[0]["espera_min"]
         self.assertLessEqual(abs(salida[0]["total_min"] - suma), 1)
         self.assertEqual(salida[0]["espera_min"], 4)
@@ -188,8 +188,8 @@ class TestPuntuar(unittest.TestCase):
     HORARIOS = {"A": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
 
     def test_llegando_andando_la_espera_sigue_saliendo_del_tiempo_real(self):
-        # Se baja en 2, se anda hasta 3 (otra parada) y alli se coge la B. La espera
-        # debe salir del tiempo real de la parada 3, contando ya la caminata.
+        # You alight at 2, walk to 3, another stop, and board B there. The wait must
+        # come from the live time of stop 3, with the walk already counted.
         red = {"A": ["1", "2"], "B": ["3", "4"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967),
                    "3": (38.881, -6.967), "4": (38.881, -6.964)}
@@ -200,14 +200,14 @@ class TestPuntuar(unittest.TestCase):
             [ruta], red, paradas, {"1": {"A": 0.0}, "3": {"B": 30.0}},
             horarios=horarios, tipo_dia="LV", ahora_min=10 * 60,
         )
-        # Con el bus a 30 min hay tiempo de sobra: la espera es lo que queda tras andar,
-        # y por tanto menor que los 30 y mayor que la media frecuencia (10).
+        # With the bus 30 min away there is time to spare: the wait is what is left
+        # after the walk, so less than 30 and more than half the frequency (10).
         espera = salida[0]["espera_transbordo_min"]
         self.assertLess(espera, 30)
         self.assertGreater(espera, 10)
 
     def test_la_caminata_del_transbordo_entra_en_el_total(self):
-        # Bajar en 2 y andar hasta 3 para coger la B: esos metros son tiempo.
+        # Alight at 2 and walk to 3 to board B: those metres are time.
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967),
                    "3": (38.881, -6.967), "4": (38.881, -6.964)}
         anda = [{"linea": "A", "subir": "1", "bajar": "2"},
@@ -234,9 +234,9 @@ class TestPuntuar(unittest.TestCase):
         self.assertNotIn("a", [p for p, _ in ranking.vecindad(paradas)["a"]])
 
     def test_el_transbordo_usa_el_tiempo_real_de_esa_parada(self):
-        # El servicio da tiempos de cualquier parada, tambien la del transbordo. Si
-        # ahi consta que la C pasa en 15 y llegamos sobre el minuto 1, la espera son
-        # ~14: no la media frecuencia (10), que es lo que se supondria sin ese dato.
+        # The service gives arrivals for any stop, the transfer one included. If it
+        # says there that C calls in 15 and we arrive around minute 1, the wait is
+        # about 14, not half the frequency (10), which is the assumption without it.
         red = {"A": ["1", "2"], "C": ["2", "3"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
         horarios = {"C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
@@ -249,7 +249,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["espera_transbordo_min"], 14)
 
     def test_si_el_bus_del_transbordo_se_escapa_se_coge_el_siguiente(self):
-        # Llegamos sobre el minuto 1 y la C acaba de pasar (en 0): se coge la de 20.
+        # We arrive around minute 1 and C has just gone past, at 0: the one at 20 is taken.
         red = {"A": ["1", "2"], "C": ["2", "3"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
         horarios = {"C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}}
@@ -262,8 +262,9 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["espera_transbordo_min"], 19)
 
     def test_un_transbordo_cuesta_media_frecuencia(self):
-        # Al bajarte no sabes en que punto del horario de la otra linea caes: una linea
-        # cada 20 minutos son 10 de espera esperable, y eso entra en el total.
+        # When you alight you do not know where in the timetable of the other line you
+        # land: a line every 20 minutes means 10 of expected wait, and that goes in the
+        # total.
         red = {"A": ["1", "2"], "C": ["2", "3"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.965)}
         horarios = {
@@ -302,8 +303,8 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
 
     def test_no_ofrece_una_ruta_mas_larga_que_empieza_igual(self):
-        # Si la A sola te deja en el destino, "A y luego C" llega mas tarde al mismo
-        # sitio: no es una alternativa, es la misma ruta con un bus de propina.
+        # If A alone drops you at the destination, "A and then C" reaches the same
+        # place later: it is not an alternative, it is that route with a spare bus.
         red = {"A": ["1", "2", "3"], "C": ["2", "3"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.966), "3": (38.880, -6.965)}
         rutas = [
@@ -316,10 +317,10 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
 
     def test_una_espera_desconocida_no_borra_una_conocida(self):
-        # El sesgo de contar cero cuando no se sabe la espera: la ruta peor conocida
-        # salia con el total mas bajo posible y descartaba a las demas por dominarlas.
-        # B, sin dato, llegaba a borrar de la pantalla a A, cierta en 15 minutos.
-        # Ahora B puede ir delante —en valor esperado lo es— pero A se sigue ofreciendo.
+        # The bias of counting zero for an unknown wait: the least known route comes
+        # out with the lowest possible total and discards the others by dominating them.
+        # B, with no data, can erase A from the screen, and A is certain at 15 minutes.
+        # B may sort ahead, which is what the expected value says, but A is still shown.
         red = {"A": ["1", "2"], "B": ["3", "2"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.960), "3": (38.8801, -6.9701)}
         horarios = {lin: {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}}
@@ -332,14 +333,14 @@ class TestPuntuar(unittest.TestCase):
         )
         lineas = [r["tramos"][0]["linea"] for r in salida]
         self.assertIn("A", lineas)
-        # Y la que se ensena de A sigue siendo su total cerrado, no una estimacion.
+        # And what is shown for A is still its closed total, not an estimate.
         cerrada = next(r for r in salida if r["tramos"][0]["linea"] == "A")
         self.assertEqual(cerrada["espera_min"], 12)
 
     def test_la_desconocida_no_se_ordena_como_si_pasara_ya(self):
-        # Sin frecuencia publicada no hay cota, asi que se supone ESPERA_SIN_DATO_MIN.
-        # Con eso, una ruta sin dato deja de ganarle a una conocida mas rapida que esa
-        # suposicion: antes ganaba siempre, porque su espera valia cero.
+        # With no published frequency there is no bound, so ESPERA_SIN_DATO_MIN
+        # applies. With that, a route with no data no longer beats a known one that is
+        # faster than the assumption. To count zero made it win every time.
         red = {"A": ["1", "2"], "B": ["3", "2"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.960), "3": (38.8801, -6.9701)}
         rutas = [[{"linea": "B", "subir": "3", "bajar": "2"}],
@@ -348,8 +349,8 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["tramos"][0]["linea"], "A")
 
     def test_una_linea_parada_no_desplaza_a_una_que_circula(self):
-        # La A no pasa a esa hora y la C si. Aunque la A saliera mejor por tiempo, no
-        # es una alternativa: la que se puede coger va primero.
+        # A does not run at that hour and C does. Even if A came out better on time,
+        # it is not an alternative: the one you can take goes first.
         horarios = {
             "A": {"LV": {"desde": "07:00", "hasta": "15:00", "frecuencia_min": 20}},
             "C": {"LV": {"desde": "07:00", "hasta": "23:00", "frecuencia_min": 20}},
@@ -365,7 +366,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual([r["tramos"][0]["linea"] for r in salida], ["C"])
 
     def test_si_no_circula_ninguna_se_muestran_igual(self):
-        # Devolver lista vacia diria "no hay ruta", y es falso: la hay, pero no ahora.
+        # An empty list would say "no route", and that is false: there is one, but not now.
         horarios = {"A": {"LV": {"desde": "07:00", "hasta": "15:00", "frecuencia_min": 20}}}
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(
@@ -375,9 +376,9 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["aviso_espera"], "fuera_de_servicio")
 
     def test_con_frecuencia_se_sabe_cuando_pasa_el_siguiente(self):
-        # 0.9 km son ~15.6 min andando, y el bus anunciado pasa en 3: se escapa. Pero
-        # la linea va cada 20, asi que el siguiente pasa en 23 y ya estas alli desde el
-        # 15.6: la espera son los ~7 minutos que van de uno a otro.
+        # 0.9 km is about 15.6 min on foot, and the announced bus calls in 3: it is
+        # missed. But the line runs every 20, so the next one calls at 23 and you have
+        # been there since 15.6: the wait is the ~7 minutes between the two.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(
             rutas, self.RED, self.PARADAS, {"1": {"A": 3.0}}, andando_origen={"1": 0.9},
@@ -405,7 +406,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["aviso_espera"], "fuera_de_servicio")
 
     def test_sin_horarios_se_comporta_como_antes(self):
-        # Quien clone el repo no tiene el fichero: la espera queda desconocida.
+        # Anyone who clones the repo has no such file: the wait stays unknown.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(
             rutas, self.RED, self.PARADAS, {"1": {"A": 3.0}}, andando_origen={"1": 0.9},
@@ -415,8 +416,8 @@ class TestPuntuar(unittest.TestCase):
         self.assertIsNone(salida[0]["espera_max_min"])
 
     def test_un_bus_que_pasa_antes_de_llegar_no_cuenta_como_espera(self):
-        # 0.9 km andando son ~15 min: un bus en 3 no se coge. Y cuándo pasa el
-        # siguiente no lo dice el servicio, así que la espera es desconocida.
+        # 0.9 km on foot is about 15 min: a bus in 3 cannot be caught. And the
+        # service does not say when the next one calls, so the wait is unknown.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(
             rutas, self.RED, self.PARADAS, {"1": {"A": 3.0}}, andando_origen={"1": 0.9},
@@ -425,9 +426,9 @@ class TestPuntuar(unittest.TestCase):
         self.assertIsNone(salida[0]["espera_min"])
 
     def test_un_bus_que_da_tiempo_a_coger_si_cuenta(self):
-        # 0.9 km son ~16 min andando y el bus pasa a los 30 DESDE AHORA: se llega en el
-        # minuto 16 y se espera hasta el 30, o sea 14. Sumar los 30 enteros contaria la
-        # caminata dos veces, dentro de la espera y otra vez aparte.
+        # 0.9 km is about 16 min on foot and the bus calls at 30 FROM NOW: you arrive
+        # at minute 16 and wait until 30, that is 14. To add the whole 30 would count
+        # the walk twice, once inside the wait and once again on its own.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(
             rutas, self.RED, self.PARADAS, {"1": {"A": 30.0}}, andando_origen={"1": 0.9},
@@ -438,7 +439,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(r["total_min"], r["andando_min"] + r["espera_min"] + r["viaje_min"])
 
     def test_la_espera_es_la_de_la_parada_no_la_de_ahora(self):
-        # Sin caminata, esperar empieza ya: la espera es la llegada anunciada.
+        # With no walk, the wait starts now: the wait is the announced arrival.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 8.0}})
         self.assertEqual(salida[0]["espera_min"], 8)
@@ -450,8 +451,8 @@ class TestPuntuar(unittest.TestCase):
         self.assertIsNone(salida[0]["espera_min"])
 
     def test_eligiendo_la_parada_a_mano_no_se_supone_caminata(self):
-        # Sin coordenadas no se sabe dónde está el usuario, así que no se puede
-        # afirmar que no llegue.
+        # Without coordinates the position of the user is unknown, so it cannot be
+        # asserted that they do not make it.
         rutas = [[{"linea": "A", "subir": "1", "bajar": "2"}]]
         salida = ranking.puntuar(rutas, self.RED, self.PARADAS, {"1": {"A": 0.0}})
         self.assertIsNone(salida[0]["aviso_espera"])
@@ -471,7 +472,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["andando_min"], esperado)
 
     def test_una_parada_lejana_pierde_contra_una_cercana(self):
-        # Las dos rutas son iguales de largas en bus; decide la caminata.
+        # Both routes are equally long by bus: the walk decides.
         red = {"A": ["1", "2"], "C": ["6", "2"]}
         rutas = [
             [{"linea": "C", "subir": "6", "bajar": "2"}],
@@ -495,16 +496,16 @@ class TestPuntuar(unittest.TestCase):
         )
 
     def test_respeta_el_limite(self):
-        # Alternativas de verdad: cuanto mas lejos queda la parada del destino mas dura
-        # el viaje, pero menos hay que andar para llegar a ella. Ninguna gana a otra en
-        # todo, asi que ninguna se descarta por dominada y solo actua el recorte.
+        # Real alternatives: the further the stop is from the destination the longer
+        # the ride, but the less you walk to reach it. Neither wins on everything, so
+        # none is discarded as dominated and only the trim applies.
         cuantas = ranking.LIMITE_RUTAS + 3
         km_por_grado = 86.7                      # a esta latitud
         destino = (38.880, -6.960)
         paradas = {"2": destino}
         andando = {}
         for i in range(cuantas):
-            viaje_km = (5 + 3 * i) / 3.9         # el viaje crece con i
+            viaje_km = (5 + 3 * i) / 3.9         # the ride grows with i
             paradas[f"s{i}"] = (38.880, destino[1] - viaje_km / km_por_grado)
             andando[f"s{i}"] = ((7 - i) / 17.3)  # y la caminata mengua
         red = {f"L{i}": [f"s{i}", "2"] for i in range(cuantas)}
@@ -513,7 +514,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(len(salida), ranking.LIMITE_RUTAS)
 
     def test_descarta_la_que_pierde_en_todo(self):
-        # Mas lenta, mas caminata y un transbordo de mas: no hay a quien le convenga.
+        # Slower, more walking and one transfer more: it suits nobody.
         red = {"A": ["1", "3"], "B": ["1", "2"], "C": ["2", "3"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.967), "3": (38.880, -6.960)}
         rutas = [
@@ -526,8 +527,8 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual([t["linea"] for t in salida[0]["tramos"]], ["A"])
 
     def test_no_repite_el_mismo_viaje_con_las_lineas_al_reves(self):
-        # "C2 o 5" y "5 o C2" son el mismo viaje: tras fusionar alternativas, el
-        # conjunto de lineas de cada tramo es identico.
+        # "C2 or 5" and "5 or C2" are the same trip: after alternatives are merged,
+        # the set of lines of each leg is identical.
         red = {"A": ["1", "2"], "C": ["1", "2"]}
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.965)}
         rutas = [
@@ -538,8 +539,8 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(len(salida), 1)
 
     def test_no_repite_la_misma_combinacion_de_lineas(self):
-        # La misma línea cogida en otra parada es el mismo viaje andando de más,
-        # no una alternativa. Se queda la más corta.
+        # The same line boarded at another stop is the same trip with more walking,
+        # not an alternative. The shortest one is kept.
         red = {"A": ["1", "3", "2"]}
         paradas = {"1": (38.880, -6.970), "3": (38.880, -6.968), "2": (38.880, -6.965)}
         rutas = [
@@ -551,7 +552,7 @@ class TestPuntuar(unittest.TestCase):
         self.assertEqual(salida[0]["tramos"][0]["subir"], "3")
 
     def test_agrupa_las_lineas_que_hacen_el_mismo_tramo(self):
-        # A y C van de la 1 a la 2 igual: es un viaje con dos buses que sirven.
+        # A and C run from 1 to 2 alike: it is one trip with two buses that serve it.
         rutas = [
             [{"linea": "A", "subir": "1", "bajar": "2"}],
             [{"linea": "C", "subir": "1", "bajar": "2"}],
@@ -600,8 +601,8 @@ class TestParadasCercanas(unittest.TestCase):
         self.assertNotIn("fuera", [i for i, _ in salida])
 
     def test_devuelve_todas_las_del_radio(self):
-        # Antes se recortaba a las más próximas, y eso escondía líneas enteras:
-        # varias paradas pegadas suelen ser de las mismas líneas.
+        # To trim to the nearest stops hides whole lines: several stops close
+        # together tend to serve the same lines.
         muchas = {str(n): (38.8800 + n / 10000, -6.9700) for n in range(20)}
         salida = ranking.paradas_cercanas(38.8800, -6.9700, muchas)
         self.assertEqual(len(salida), 20)

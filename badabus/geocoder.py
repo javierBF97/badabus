@@ -1,17 +1,18 @@
-"""Traducir entre direcciones y coordenadas, con dos proveedores en cascada.
+"""Translate between addresses and coordinates, with two providers in cascade.
 
-**Photon** (Komoot, sobre OpenStreetMap) va primero: encuentra con la palabra a
-medias —"Condes de Barc" ya devuelve el paseo—, y el autocompletado figura entre sus
-funciones declaradas, al contrario que Nominatim, que lo prohíbe expresamente. Además
-degrada bien: si pides un número que no existe, te da la calle.
+**Photon** (Komoot, on OpenStreetMap) goes first: it finds an address from half a word,
+and autocomplete is one of its stated features, unlike Nominatim, which forbids it
+expressly. It also degrades well: if you ask for a street number that does not exist,
+it gives you the street.
 
-**Cartociudad** (Instituto Geográfico Nacional) entra solo cuando Photon no encuentra
-nada. Es el callejero oficial español y trae portales del catastro que OpenStreetMap
-puede no tener. No sirve como principal porque devuelve **cero resultados** cuando el
-número no está en su base, en vez de ofrecer la calle.
+**Cartociudad** (Instituto Geográfico Nacional) comes in only when Photon finds nothing.
+It is the official Spanish street register and it holds land registry addresses that
+OpenStreetMap may not have. It does not serve as the primary provider, because it
+returns **zero results** when the number is not in its database, instead of offering
+the street.
 
-Aunque Photon permita buscar mientras se escribe, una petición por tecla sería abusar
-de un servicio gratuito: el buscador mantiene su espera corta y su caché.
+Photon allows search as you type, but one request per keystroke would abuse a free
+service: the search box keeps its short delay and its cache.
 """
 
 import json
@@ -21,10 +22,10 @@ from urllib.parse import urlencode
 
 PHOTON = "https://photon.komoot.io/"
 CARTOCIUDAD = "https://www.cartociudad.es/geocoder/api/geocoder/"
-# Badajoz y alrededores: lon_min,lat_min,lon_max,lat_max
+# Badajoz and its surroundings: lon_min,lat_min,lon_max,lat_max
 BBOX = "-7.05,38.83,-6.88,38.93"
 CENTRO_LAT, CENTRO_LON = 38.879, -6.970
-# Cartociudad busca en toda España si no se le dice dónde.
+# Cartociudad searches all of Spain if it is not told where.
 MUNICIPIO = "Badajoz"
 USER_AGENT = "badabus/1.0 (proyecto personal; github.com/javierBF97/badabus)"
 FETCH_MAX_BYTES = 1_000_000
@@ -34,16 +35,16 @@ _FALLOS = (OSError, ValueError, KeyError, TypeError, IndexError)
 
 
 def fetch(url: str, timeout: int = 10) -> bytes:
-    """GET al geocodificador, identificándose como pide su política de uso."""
+    """GET to the geocoder, identified as its usage policy requires."""
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read(FETCH_MAX_BYTES)
 
 
 def buscar(texto: str, fetcher: Callable[..., bytes] = fetch) -> list[dict]:
-    """Direcciones que coinciden con el texto, acotadas a Badajoz.
+    """Addresses that match the text, bounded to Badajoz.
 
-    Devuelve [{"nombre", "lat", "lon"}]. Los resultados sin coordenadas se omiten.
+    Returns [{"nombre", "lat", "lon"}]. Results without coordinates are left out.
     """
     consulta = texto.strip()
     if not consulta:
@@ -61,8 +62,8 @@ def buscar(texto: str, fetcher: Callable[..., bytes] = fetch) -> list[dict]:
 
 
 def _sin_repetidos(sitios: list[dict]) -> list[dict]:
-    """Una entrada por nombre: el geocodificador devuelve varios tramos de un vial y
-    en la lista salen tres veces la misma calle, que no ayuda a elegir."""
+    """One entry per name: the geocoder returns several segments of one road, and the
+    same street then appears three times in the list, which does not help to choose."""
     vistos: dict[str, dict] = {}
     for sitio in sitios:
         vistos.setdefault(sitio["nombre"], sitio)
@@ -70,7 +71,7 @@ def _sin_repetidos(sitios: list[dict]) -> list[dict]:
 
 
 def direccion(lat: float, lon: float, fetcher: Callable[..., bytes] = fetch) -> str:
-    """Nombre del sitio que hay en esas coordenadas; cadena vacía si no se sabe."""
+    """Name of the place at those coordinates. An empty string if it is not known."""
     try:
         nombre = _photon_inversa(lat, lon, fetcher)
     except _FALLOS:
@@ -89,7 +90,7 @@ def _photon_buscar(consulta: str, fetcher: Callable[..., bytes]) -> list[dict]:
         "limit": LIMITE,
         "lat": CENTRO_LAT,
         "lon": CENTRO_LON,
-        # Sin recuadro, "Avenida de Elvas" se va a Elvas, que está en Portugal.
+        # Without the box, "Avenida de Elvas" goes to Elvas, which is in Portugal.
         "bbox": BBOX,
     })
     datos = json.loads(fetcher(f"{PHOTON}api/?{query}"))
@@ -110,7 +111,7 @@ def _photon_buscar(consulta: str, fetcher: Callable[..., bytes]) -> list[dict]:
 
 
 def _nombre_photon(props: dict) -> str:
-    """Un nombre legible a partir de las piezas sueltas que devuelve Photon."""
+    """A readable name from the loose pieces that Photon returns."""
     calle = props.get("street") or props.get("name") or ""
     numero = props.get("housenumber")
     cabeza = f"{calle} {numero}".strip() if numero else calle
@@ -126,7 +127,7 @@ def _photon_inversa(lat: float, lon: float, fetcher: Callable[..., bytes]) -> st
 
 
 def _cartociudad_buscar(consulta: str, fetcher: Callable[..., bytes]) -> list[dict]:
-    # Sin el municipio busca por toda España y devuelve calles de otras provincias.
+    # Without the municipality it searches all of Spain and returns other provinces.
     query = urlencode({"q": f"{consulta}, {MUNICIPIO}", "limit": LIMITE})
     datos = json.loads(fetcher(f"{CARTOCIUDAD}candidates?{query}"))
     salida = []

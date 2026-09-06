@@ -1,11 +1,11 @@
-"""Cada cuánto pasa cada línea, a partir de los horarios publicados.
+"""How often each line runs, from the published timetables.
 
-El endpoint de tiempos solo informa del **próximo** bus de cada línea. Cuando ese se
-escapa, o cuando no hay dato, la espera queda en el aire. Sabiendo cada cuánto pasa la
-línea se puede cerrar: el siguiente va una frecuencia después del que se pierde.
+The arrivals endpoint reports only the **next** bus of each line. When that one is
+missed, or when there is no data, the wait is left open. With the frequency of the line
+it can be closed: the following bus comes one frequency after the one you miss.
 
-El fichero se transcribe a mano y no se distribuye con el proyecto (ver README). Si no
-está, todo esto devuelve None y el resto sigue funcionando igual que antes.
+The file is typed in by hand and is not distributed with the project (see the readme).
+If it is not there, all of this returns None and the rest keeps working the same.
 """
 
 import json
@@ -16,7 +16,7 @@ FICHERO = "frecuencias.json"
 
 
 def cargar(data_dir: Path = DATA_DIR) -> dict:
-    """Los horarios publicados, o {} si el fichero no está o no se puede leer."""
+    """The published timetables, or {} if the file is missing or cannot be read."""
     try:
         datos = json.loads((data_dir / FICHERO).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -25,7 +25,7 @@ def cargar(data_dir: Path = DATA_DIR) -> dict:
 
 
 def _minutos(hhmm: str) -> int | None:
-    """'07:30' -> 450. None si no es una hora."""
+    """'07:30' -> 450. None if it is not a time."""
     try:
         h, m = str(hhmm).split(":")
         return int(h) * 60 + int(m)
@@ -39,10 +39,10 @@ def _horario(frecuencias: dict, linea: str, tipo_dia: str) -> dict | None:
 
 
 def en_servicio(frecuencias: dict, linea: str, tipo_dia: str, ahora_min: int) -> bool | None:
-    """¿Circula esa línea a esa hora? None si no consta su horario.
+    """Does that line run at that hour? None if its timetable is not on record.
 
-    Distinguir "ya no pasa" de "no se sabe" evita decir "sin datos de paso" a las once
-    de la noche, cuando lo cierto es que el servicio ha terminado.
+    To tell "it no longer runs" from "it is not known" avoids saying "no arrival data"
+    at eleven at night, when the truth is that the service has finished.
     """
     horario = _horario(frecuencias, linea, tipo_dia)
     if not horario:
@@ -54,11 +54,11 @@ def en_servicio(frecuencias: dict, linea: str, tipo_dia: str, ahora_min: int) ->
 
 
 def intervalo_min(frecuencias: dict, linea: str, tipo_dia: str, ahora_min: int) -> float | None:
-    """Cada cuántos minutos pasa esa línea a esa hora. None si no consta.
+    """Minutes between buses of that line at that hour. None if it is not on record.
 
-    Los horarios vienen en tres formas: una frecuencia fija, tramos con frecuencias
-    distintas a lo largo del día, u horas de salida sueltas. En los dos últimos casos
-    se mira el tramo o el hueco que corresponde a la hora consultada.
+    The timetables come in three forms: a fixed frequency, time bands with different
+    frequencies through the day, or loose departure times. In the last two cases, the
+    band or the gap that matches the hour queried is used.
     """
     horario = _horario(frecuencias, linea, tipo_dia)
     if not horario:
@@ -71,8 +71,8 @@ def intervalo_min(frecuencias: dict, linea: str, tipo_dia: str, ahora_min: int) 
             for i in [_intervalo_de_tramo(lista, ahora_min)] if i is not None
         ]
         if intervalos:
-            # Varias cabeceras cubren la misma línea; la que más tarda manda, para no
-            # prometer una espera más corta de la que puede tocar.
+            # Several termini cover the same line. The slowest one rules, so the
+            # wait promised is never shorter than the one you can get.
             return max(intervalos)
 
     salidas = horario.get("salidas")
@@ -86,13 +86,13 @@ def intervalo_min(frecuencias: dict, linea: str, tipo_dia: str, ahora_min: int) 
     if isinstance(frecuencia, (int, float)):
         return float(frecuencia)
     if isinstance(frecuencia, list) and frecuencia:
-        # Sin tramos que desambigüen, se toma la peor de las frecuencias posibles.
+        # With no bands to disambiguate, the worst possible frequency is taken.
         return float(max(frecuencia))
     return None
 
 
 def _intervalo_de_tramo(tramos: list, ahora_min: int) -> float | None:
-    """El intervalo del tramo horario que contiene a `ahora_min`."""
+    """The interval of the time band that contains `ahora_min`."""
     if not isinstance(tramos, list):
         return None
     for tramo in tramos:
@@ -103,7 +103,7 @@ def _intervalo_de_tramo(tramos: list, ahora_min: int) -> float | None:
             continue
         minutos = tramo.get("minutos")
         if isinstance(minutos, list) and minutos:
-            # Salidas repartidas en la hora: tres salidas son una cada veinte minutos.
+            # Departures spread over the hour: three departures are one every twenty minutes.
             return 60.0 / len(minutos)
         salidas = tramo.get("salidas")
         if isinstance(salidas, list):
@@ -112,7 +112,7 @@ def _intervalo_de_tramo(tramos: list, ahora_min: int) -> float | None:
 
 
 def _hueco_entre_salidas(salidas: list, ahora_min: int) -> float | None:
-    """Minutos entre las dos salidas que rodean a `ahora_min`."""
+    """Minutes between the two departures that surround `ahora_min`."""
     if not isinstance(salidas, list):
         return None
     horas = sorted(m for s in salidas if (m := _minutos(s)) is not None)
@@ -121,6 +121,6 @@ def _hueco_entre_salidas(salidas: list, ahora_min: int) -> float | None:
     for anterior, siguiente in zip(horas, horas[1:], strict=False):
         if anterior <= ahora_min <= siguiente:
             return float(siguiente - anterior)
-    # Fuera del rango de salidas: el hueco típico es lo más honesto que se puede decir.
+    # Outside the range of departures, the typical gap is the most honest answer.
     huecos = [b - a for a, b in zip(horas, horas[1:], strict=False)]
     return float(max(huecos)) if huecos else None

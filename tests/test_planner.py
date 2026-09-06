@@ -5,18 +5,18 @@ from pathlib import Path
 
 from badabus import planner
 
-# Red mínima de prueba:
+# Minimum test network:
 #   A: 1 -> 2 -> 3 -> 4
-#   B: 3 -> 5 -> 6   (comparte la 3 con A: transbordo posible)
-#   C: 2 -> 7        (comparte la 2 con A)
-#   D: 1 -> 99       (existe en la red pero NO circula hoy)
+#   B: 3 -> 5 -> 6   (shares stop 3 with A: a transfer is possible)
+#   C: 2 -> 7        (shares stop 2 with A)
+#   D: 1 -> 99       (exists in the network but does NOT run today)
 RED = {
     "A": ["1", "2", "3", "4"],
     "B": ["3", "5", "6"],
     "C": ["2", "7"],
     "D": ["1", "99"],
 }
-# Solo A, B y C circulan hoy (D queda fuera).
+# Only A, B and C run today (D stays out).
 ACTIVAS = ["A", "B", "C"]
 DIAS = {"LV": ACTIVAS, "SAB": ["A"], "DOM": []}
 
@@ -28,7 +28,7 @@ class TestPlanificar(unittest.TestCase):
     def test_ruta_directa(self):
         rutas = self.plan("1", "4")
         self.assertIn([{"linea": "A", "subir": "1", "bajar": "4"}], rutas)
-        # Con ruta directa no debe proponer nada con transbordos.
+        # With a direct route it must not propose anything with transfers.
         self.assertTrue(all(len(r) == 1 for r in rutas))
 
     def test_un_transbordo(self):
@@ -42,28 +42,28 @@ class TestPlanificar(unittest.TestCase):
         self.assertEqual(self.plan("1", "inexistente"), [])
 
     def test_origen_igual_destino(self):
-        # Misma parada: no hay ruta (evita la "vuelta entera" en líneas circulares).
+        # Same stop: there is no route (it avoids the "full loop" on circular lines).
         self.assertEqual(self.plan("2", "2"), [])
 
     def test_prefiere_directa_a_transbordo(self):
-        # 2 -> 4 es directo por A; no debe mezclar rutas con transbordo.
+        # 2 -> 4 is direct on A: it must not mix in routes with a transfer.
         rutas = self.plan("2", "4")
         self.assertEqual(rutas, [[{"linea": "A", "subir": "2", "bajar": "4"}]])
 
     def test_solo_usa_lineas_activas(self):
-        # 1 -> 99 solo sería posible por la línea D, que hoy no circula.
+        # 1 -> 99 would be possible only on line D, which does not run today.
         self.assertEqual(self.plan("1", "99"), [])
 
     def test_no_viaja_hacia_atras(self):
-        # En A la 4 va después de la 1, así que 4 -> 1 no es alcanzable en ese sentido.
+        # On A, stop 4 comes after stop 1, so 4 -> 1 is not reachable in that direction.
         self.assertEqual(self.plan("4", "1"), [])
 
     def test_respeta_max_transbordos(self):
-        # 1 -> 6 necesita un transbordo; con max_transbordos=0 no hay ruta.
+        # 1 -> 6 needs a transfer: with max_transbordos=0 there is no route.
         self.assertEqual(self.plan("1", "6", max_transbordos=0), [])
 
     def test_conjunto_de_activas_distinto(self):
-        # Con solo la A activa, la 1 -> 6 (que necesita la B) deja de existir.
+        # With only A active, 1 -> 6, which needs B, no longer exists.
         self.assertEqual(planner.planificar("1", "6", RED, ["A"]), [])
         self.assertEqual(
             planner.planificar("1", "4", RED, ["A"]),
@@ -72,12 +72,12 @@ class TestPlanificar(unittest.TestCase):
 
 
 class TestTransbordoAndando(unittest.TestCase):
-    # A: 1 -> 2      B: 3 -> 4      La 2 y la 3 son paradas distintas pero vecinas.
+    # A: 1 -> 2      B: 3 -> 4      Stops 2 and 3 are different but neighbours.
     RED_PIE = {"A": ["1", "2"], "B": ["3", "4"], "D": ["2", "9"]}
     VECINAS = {"2": [("3", 0.1)], "3": [("2", 0.1)]}
 
     def test_sin_vecinas_no_hay_ruta(self):
-        # Sin el grafo, el transbordo exige la misma parada: 1 -> 4 no existe.
+        # Without the graph, a transfer requires the same stop: 1 -> 4 does not exist.
         self.assertEqual(
             planner.planificar_muchos(["1"], ["4"], self.RED_PIE, ["A", "B"]), []
         )
@@ -92,9 +92,9 @@ class TestTransbordoAndando(unittest.TestCase):
         ]])
 
     def test_ofrece_las_dos_versiones_cuando_hay_transbordo_en_parada(self):
-        # Con las mismas lineas hay dos formas: bajarse antes y andar, o seguir hasta
-        # la parada comun. El planificador no debe elegir por su cuenta: medir en
-        # paradas recorridas hace ganar a la de andar, que puede ser mucho peor.
+        # With the same lines there are two ways: alight early and walk, or stay on
+        # to the common stop. The planner must not choose on its own: to measure in
+        # stops ridden makes the walking one win, and it can be much worse.
         red = {"C": ["1", "2", "3"], "E": ["9", "3", "4"]}
         vecinas = {"2": [("9", 0.2)], "9": [("2", 0.2)]}
         rutas = planner.planificar_muchos(["1"], ["4"], red, ["C", "E"], vecinas=vecinas)
@@ -103,7 +103,7 @@ class TestTransbordoAndando(unittest.TestCase):
         self.assertIn((False,), formas, "falta la version sin andar")
 
     def test_no_se_baja_antes_para_andar_a_donde_el_bus_llega(self):
-        # La C pasa por 5, 6 y 7. Bajarse en 6 y andar hasta 7 es absurdo: el bus va.
+        # C calls at 5, 6 and 7. To alight at 6 and walk to 7 is absurd: the bus goes there.
         red = {"C": ["5", "6", "7"], "E": ["7", "8"]}
         vecinas = {"6": [("7", 0.2)], "7": [("6", 0.2)]}
         rutas = planner.planificar_muchos(["5"], ["8"], red, ["C", "E"], vecinas=vecinas)
@@ -115,7 +115,7 @@ class TestTransbordoAndando(unittest.TestCase):
                 )
 
     def test_no_se_anda_hacia_atras(self):
-        # La C pasa por 5 antes que por 6: al bajar en 6 no se vuelve andando a la 5.
+        # C calls at 5 before 6: after alighting at 6 you do not walk back to 5.
         red = {"C": ["5", "6"], "E": ["5", "7"]}
         vecinas = {"6": [("5", 0.1)], "5": [("6", 0.1)]}
         self.assertEqual(

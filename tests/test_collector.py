@@ -109,7 +109,7 @@ class TestCollect(unittest.TestCase):
         self.assertNotIn("M2", shapes)
 
     def test_recolectar_dias(self):
-        # M2 circula LV pero no SAB; la línea 2 solo circula SAB.
+        # M2 runs on LV but not on SAB. Line 2 runs only on SAB.
         def fake_corr(url, timeout=10):
             if "action=lineas" in url:
                 return LINEAS

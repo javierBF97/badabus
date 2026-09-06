@@ -5,8 +5,8 @@ from pathlib import Path
 
 from badabus import frecuencias
 
-# Una linea de cada forma: frecuencia fija, tramos que cambian durante el dia, y
-# salidas sueltas sin patron.
+# One line of each form: a fixed frequency, bands that change through the day, and
+# loose departures with no pattern.
 HORARIOS = {
     "lineas": {
         "FIJA": {
@@ -35,7 +35,7 @@ class TestCargar(unittest.TestCase):
             self.assertEqual(set(frecuencias.cargar(Path(d))), {"FIJA", "TRAMOS", "SALIDAS"})
 
     def test_sin_fichero_devuelve_vacio(self):
-        # Es el caso de quien clona el repo: no debe romper nada.
+        # This is the case of anyone who clones the repo: it must not break anything.
         self.assertEqual(frecuencias.cargar(Path("no-existe")), {})
 
     def test_fichero_ilegible_devuelve_vacio(self):
@@ -51,12 +51,12 @@ class TestIntervalo(unittest.TestCase):
         self.assertEqual(frecuencias.intervalo_min(self.H, "FIJA", "LV", 9 * 60), 20.0)
 
     def test_los_tramos_cambian_con_la_hora(self):
-        # Cuatro salidas por hora por la mañana, tres por la tarde.
+        # Four departures an hour in the morning, three in the afternoon.
         self.assertEqual(frecuencias.intervalo_min(self.H, "TRAMOS", "LV", 10 * 60), 15.0)
         self.assertEqual(frecuencias.intervalo_min(self.H, "TRAMOS", "LV", 18 * 60), 20.0)
 
     def test_salidas_sueltas_dan_el_hueco(self):
-        # Entre las 08:00 y las 09:30 hay hora y media.
+        # Between 08:00 and 09:30 there is an hour and a half.
         self.assertEqual(frecuencias.intervalo_min(self.H, "SALIDAS", "LV", 8 * 60 + 30), 90.0)
 
     def test_linea_desconocida(self):
@@ -76,14 +76,14 @@ class TestEnServicio(unittest.TestCase):
         self.assertTrue(frecuencias.en_servicio(self.H, "FIJA", "LV", 9 * 60))
 
     def test_despues_del_ultimo_bus(self):
-        # A las 23:40 la linea ya ha terminado: no es que falte el dato.
+        # At 23:40 the line has already finished: the data is not missing.
         self.assertFalse(frecuencias.en_servicio(self.H, "FIJA", "LV", 23 * 60 + 40))
 
     def test_antes_del_primero(self):
         self.assertFalse(frecuencias.en_servicio(self.H, "FIJA", "LV", 6 * 60))
 
     def test_sin_horario_no_se_sabe(self):
-        # None no es False: una cosa es que no pase y otra que no conste.
+        # None is not False: one thing is that it does not run, another that it is not on record.
         self.assertIsNone(frecuencias.en_servicio(self.H, "NO_EXISTE", "LV", 9 * 60))
         self.assertIsNone(frecuencias.en_servicio({}, "FIJA", "LV", 9 * 60))
 

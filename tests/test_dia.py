@@ -17,7 +17,7 @@ def fake(url, timeout=10):
 
 class TestTipoDiaLocal(unittest.TestCase):
     def test_laborables(self):
-        # 2026-07-20 es lunes; hasta el viernes 24 son laborables.
+        # 2026-07-20 is a Monday. Up to Friday the 24th they are weekdays.
         for d in range(20, 25):
             self.assertEqual(dia.tipo_dia_local(datetime.date(2026, 7, d)), "LV")
 

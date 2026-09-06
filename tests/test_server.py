@@ -27,7 +27,7 @@ class TestServer(unittest.TestCase):
         Path(self._tmp.name, "styles.css").write_text("/* css */", encoding="utf-8")
         server.DATA_DIR = Path(self._tmp.name)
         server.WEB_DIR = Path(self._tmp.name)
-        # Stubea por defecto para que ningún test toque la red ni el disco
+        # Stubbed by default so that no test touches the network or the disk
         bus_data_api.fetch_json = lambda action, **kw: []
         server.ranking.cargar_paradas = lambda *a, **kw: {}
         self._orig_buscar = server.geocoder.buscar
@@ -107,12 +107,12 @@ class TestServer(unittest.TestCase):
             return resp.headers
 
     def test_los_ficheros_no_se_quedan_cacheados(self):
-        # Sin esto el navegador sirve un app.js viejo sin avisar, y se depura un rato
-        # algo que ya estaba arreglado.
+        # Without this the browser serves an old app.js and says nothing, and time
+        # goes into debugging something that was already fixed.
         self.assertEqual(self.cabeceras("/app.js")["Cache-Control"], "no-store")
 
     def test_los_tiempos_en_vivo_tampoco(self):
-        # Aqui importa mas: un tiempo de paso guardado es un tiempo falso.
+        # It matters more here: a stored arrival time is a false arrival time.
         bus_data_api.fetch_json = lambda action, **kw: []
         self.assertEqual(self.cabeceras("/api/parada/202")["Cache-Control"], "no-store")
 
@@ -226,7 +226,7 @@ class TestServer(unittest.TestCase):
         self.assertEqual(leido.get("BADABUS_HOST", server.HOST_POR_DEFECTO), "127.0.0.1")
 
     def _con_red(self, red, dias, paradas, ruta):
-        """Ejecuta una peticion con la red de prueba puesta, y la deja como estaba."""
+        """Runs one request with the test network in place, and leaves it as it was."""
         originales = (server.planner.cargar_datos, server.dia.tipo_dia_actual,
                       bus_data_api.fetch_json, server.ranking.cargar_paradas)
         server.planner.cargar_datos = lambda *a, **kw: (red, dias)
@@ -240,7 +240,7 @@ class TestServer(unittest.TestCase):
              bus_data_api.fetch_json, server.ranking.cargar_paradas) = originales
 
     def test_plan_ofrece_ir_andando(self):
-        # Sin esto se proponia un cuarto de hora de autobus para doscientos metros.
+        # Without this, a quarter of an hour of bus is proposed for two hundred metres.
         paradas = {"1": (38.880, -6.970), "2": (38.880, -6.968), "3": (38.880, -6.965)}
         status, body = self._con_red(
             {"A": ["1", "2", "3"]}, {"LV": ["A"]}, paradas,
@@ -258,7 +258,7 @@ class TestServer(unittest.TestCase):
         status, body = self._con_red(
             {"A": ["1", "2"]}, {"LV": ["A"]}, paradas, "/api/plan?origen=1&destino=99")
         self.assertEqual(status, 200)
-        # La 99 no existe: sin punto de destino no se afirma ninguna caminata.
+        # Stop 99 does not exist: with no destination point no walk is asserted.
         self.assertNotIn("a_pie", json.loads(body))
 
     def test_plan_ok(self):
@@ -286,8 +286,8 @@ class TestServer(unittest.TestCase):
         rutas = json.loads(body)["rutas"]
         self.assertEqual(rutas[0]["tramos"], [{"linea": "A", "subir": "1", "bajar": "3"}])
         self.assertEqual(rutas[0]["espera_min"], 5)
-        # Eligiendo paradas a mano se miran igual las de al lado, asi que la
-        # caminata existe como concepto: 0 significa que no hay que andar.
+        # Picking stops by hand still looks at the ones next to them, so the walk
+        # exists as a concept: 0 means there is nothing to walk.
         self.assertEqual(rutas[0]["andando_min"], 0)
 
     def test_plan_con_coordenadas_de_origen(self):
@@ -333,7 +333,7 @@ class TestServer(unittest.TestCase):
         self.assertEqual(datos["aviso"], "fuera de la red")
 
     def test_plan_con_cargar_paradas_fallando(self):
-        """Cuando cargar_paradas falla, devuelve 'sin datos de paradas'."""
+        """When cargar_paradas fails, it returns 'sin datos de paradas'."""
         red = {"A": ["1", "2", "3"]}
         dias = {"LV": ["A"]}
         def falla(*a, **kw):
@@ -345,7 +345,7 @@ class TestServer(unittest.TestCase):
         server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
         server.ranking.cargar_paradas = falla
         try:
-            # Con coordenadas (no ID) para que se intente resolver_extremo
+            # With coordinates, not an id, so that resolver_extremo is exercised
             status, body = self.get(
                 "/api/plan?origen_lat=38.88&origen_lon=-6.97&destino=3"
             )
@@ -421,7 +421,7 @@ class TestServer(unittest.TestCase):
         server.planner.cargar_datos = lambda *a, **kw: (red, dias)
         server.dia.tipo_dia_actual = lambda *a, **kw: ("LV", "Horario L - V")
         bus_data_api.fetch_json = lambda action, **kw: []
-        # cargar_paradas ya devuelve {} por el setUp
+        # cargar_paradas already returns {} because of setUp
         try:
             status, body = self.get("/api/plan?origen=1&destino=3")
         finally:
@@ -455,7 +455,7 @@ class TestServer(unittest.TestCase):
         self.assertEqual(status, 502)
 
     def test_plan_malformed_data(self):
-        # dias que no es dict (fichero corrupto) -> 502 limpio, no 500 con traza.
+        # dias that is not a dict, a corrupt file -> a clean 502, not a 500 with a traceback.
         orig_datos = server.planner.cargar_datos
         orig_dia = server.dia.tipo_dia_actual
         server.planner.cargar_datos = lambda *a, **kw: ({"A": ["1", "2", "3"]}, [])
@@ -469,7 +469,7 @@ class TestServer(unittest.TestCase):
         self.assertEqual(status, 502)
 
     def test_plan_sin_dia_usa_el_calendario(self):
-        # Si el servicio no responde, el planificador sigue dando rutas.
+        # If the service does not answer, the planner still gives routes.
         red = {"A": ["1", "2", "3"]}
         dias = {tipo: ["A"] for tipo in ("LV", "SAB", "DOM")}
         def boom(*a, **kw):

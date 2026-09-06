@@ -8,28 +8,28 @@ from badabus import frecuencias as frec
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-VELOCIDAD_COMERCIAL_KMH = 20   # velocidad comercial real, medida de tiempos
-FACTOR_SINUOSIDAD = 1.3        # la ruta real serpentea ~30% más que la recta
-FACTOR_INFUMABLE = 1.5         # se descarta lo que pase de 1.5x la mejor
-LIMITE_RUTAS = 4               # máximo de alternativas devueltas
+VELOCIDAD_COMERCIAL_KMH = 20   # real commercial speed, measured from the arrivals
+FACTOR_SINUOSIDAD = 1.3        # the real course winds ~30% more than the line
+FACTOR_INFUMABLE = 1.5         # anything over 1.5x the best one is dropped
+LIMITE_RUTAS = 4               # most alternatives returned
 
-VELOCIDAD_ANDANDO_KMH = 4.5    # paso normal
-FACTOR_CALLEJEO = 1.3          # andando tampoco se va en línea recta
-RADIO_PARADAS_KM = 1.0         # tope de cordura al buscar paradas cercanas
-RADIO_TRANSBORDO_KM = 0.3      # hasta donde se anda entre paradas para transbordar
-MARGEN_LLEGADA_MIN = 2         # margen para dar un bus por cogido (andar es estimado)
-ESPERA_TRANSBORDO_MIN = 5      # lo que se supone en un transbordo sin frecuencia conocida
-# Lo que se supone que se espera un bus del que no se sabe nada y cuya frecuencia
-# tampoco se publica. Es la mitad de la frecuencia mediana publicada (30 min), que es
-# lo esperable al llegar a la parada en un momento cualquiera. No es un dato: es la
-# alternativa menos mala a contar cero, que es lo unico que seguro esta mal.
+VELOCIDAD_ANDANDO_KMH = 4.5    # a normal pace
+FACTOR_CALLEJEO = 1.3          # on foot you do not go straight either
+RADIO_PARADAS_KM = 1.0         # sanity limit when looking for nearby stops
+RADIO_TRANSBORDO_KM = 0.3      # how far you walk between stops to transfer
+MARGEN_LLEGADA_MIN = 2         # margin to call a bus caught (walking is an estimate)
+ESPERA_TRANSBORDO_MIN = 5      # assumed at a transfer with no known frequency
+# The assumed wait for a bus with no live data and no published frequency. It is half
+# of the median published frequency (30 min), which is the expected wait if you reach
+# the stop at a random time. It is not a measurement. It is the least bad alternative
+# to counting zero, which is the only value that is certainly wrong.
 ESPERA_SIN_DATO_MIN = 15
 
 RADIO_TIERRA_KM = 6371.0
 
 
 def distancia_km(a: tuple[float, float], b: tuple[float, float]) -> float:
-    """Distancia en línea recta (haversine) entre dos (lat, lon), en kilómetros."""
+    """Straight-line distance (haversine) between two (lat, lon) points, in kilometres."""
     lat1, lon1 = math.radians(a[0]), math.radians(a[1])
     lat2, lon2 = math.radians(b[0]), math.radians(b[1])
     dlat, dlon = lat2 - lat1, lon2 - lon1
@@ -39,7 +39,7 @@ def distancia_km(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def cargar_shapes(data_dir: Path = DATA_DIR) -> dict:
-    """La geometría de cada línea, o {} si no está el fichero."""
+    """The geometry of each line, or {} if the file is not there."""
     try:
         return json.loads((data_dir / "shapes.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -63,15 +63,16 @@ def _puntos(sentido: list) -> list:
 
 
 def distancias_por_tramo(red: dict, paradas: dict, shapes: dict) -> dict:
-    """Metros de carretera entre paradas consecutivas: {(línea, a, b): km}.
+    """Road distance between consecutive stops: {(line, a, b): km}.
 
-    La distancia recta corregida por un factor fijo falla en las dos direcciones: se
-    midió sobre 491 tramos y la sinuosidad real va de 0,95 a 2,19, con mediana 1,10
-    frente al 1,30 que se aplicaba a todos. En los tramos rectos sobraba tiempo y en
-    los revirados faltaban minutos, que es lo grave porque hace perder transbordos.
+    A straight line times a fixed factor is wrong in both directions. Measured over 491
+    legs, the real detour factor runs from 0.95 to 2.19, with a median of 1.10 against
+    the 1.30 that a single fixed factor gives every leg. Straight legs get too much
+    time. Winding legs get too little, and that is the direction that hurts, because it
+    makes you miss transfers.
 
-    La geometría ya está descargada, así que la distancia se puede medir en lugar de
-    suponerla. Se calcula una vez: recorrer los trazados en cada consulta sería caro.
+    The geometry is already downloaded, so the distance can be measured instead of
+    assumed. It is computed once: to scan the shapes on every query would be expensive.
     """
     reales: dict[tuple, float] = {}
     for linea, seq in red.items():
@@ -79,7 +80,7 @@ def distancias_por_tramo(red: dict, paradas: dict, shapes: dict) -> dict:
             pts = _puntos(sentido)
             if len(pts) < 2:
                 continue
-            # El punto del trazado más cercano a cada parada, una vez por parada.
+            # The shape point nearest to each stop, computed once per stop.
             cerca = {}
             for parada in set(seq):
                 if parada in paradas:
@@ -94,7 +95,7 @@ def distancias_por_tramo(red: dict, paradas: dict, shapes: dict) -> dict:
                 tramo = pts[cerca[a]:cerca[b] + 1]
                 km = sum(distancia_km(tramo[i], tramo[i + 1]) for i in range(len(tramo) - 1))
                 recta = distancia_km(paradas[a], paradas[b])
-                # Un trazado mal alineado puede dar disparates: se descarta lo imposible.
+                # A badly aligned shape can give nonsense, so impossible values are dropped.
                 if recta > 0 and recta <= km <= recta * 3:
                     reales[(linea, a, b)] = km
     return reales
@@ -103,20 +104,20 @@ def distancias_por_tramo(red: dict, paradas: dict, shapes: dict) -> dict:
 def minutos_viaje(
     ruta: list[dict], red: dict, paradas: dict, reales: dict | None = None
 ) -> float:
-    """Minutos de trayecto estimados, a velocidad comercial media.
+    """Estimated ride time in minutes, at the mean commercial speed.
 
-    Con `reales` se usa la distancia de carretera medida del trazado de la línea. Sin
-    ella se cae a la recta entre paradas corregida por un factor fijo, que es peor pero
-    no necesita la geometría descargada.
+    With `reales`, the road distance measured from the line shape is used. Without it,
+    the distance falls back to the straight line between stops times a fixed factor.
+    That is worse, but it does not need the downloaded geometry.
 
-    Se ignoran las paradas sin coordenadas y se suma entre las que quedan,
-    en orden.
+    Stops without coordinates are ignored. The distance is summed between the stops
+    that remain, in order.
 
-    Nota: los índices se resuelven por la PRIMERA aparición de cada parada
-    en la secuencia de la línea, siguiendo la misma convención que usa el
-    planificador al construir tramos. Por eso, en líneas de ida y vuelta
-    (que repiten paradas), un tramo del retorno puede medirse con más
-    paradas intermedias de las ideales.
+    Note: the boarding stop resolves to its FIRST occurrence in the line sequence, and
+    the alighting stop to its first occurrence after that one.
+    This follows the same convention the planner uses to build legs. On out-and-back
+    lines, which repeat stops, a return leg can therefore be measured through more
+    intermediate stops than it should.
     """
     reales = reales or {}
     km = 0.0
@@ -125,31 +126,32 @@ def minutos_viaje(
         seq = red[linea]
         i = seq.index(tramo["subir"])
         j = i + 1 + seq[i + 1:].index(tramo["bajar"])
-        # Las paradas sin coordenadas se puentean: se mide de la anterior a la
-        # siguiente, que es mejor aproximación que descontar ese trozo del viaje.
+        # Stops without coordinates are bridged: the distance is measured from the
+        # previous stop to the next one, which approximates better than dropping that
+        # part of the trip.
         entre = [s for s in seq[i:j + 1] if s in paradas]
         for a, b in zip(entre, entre[1:], strict=False):
             medida = reales.get((linea, a, b))
             if medida is not None:
                 km += medida
             else:
-                # Sin geometría de ese tramo, la recta corregida es lo que hay.
+                # Without geometry for that leg, the corrected straight line is all there is.
                 km += distancia_km(paradas[a], paradas[b]) * FACTOR_SINUOSIDAD
     return km / VELOCIDAD_COMERCIAL_KMH * 60
 
 
 def minutos_andando(km: float) -> float:
-    """Minutos a pie de una distancia recta, corregida porque no se
-    atraviesan edificios.
+    """Walking minutes for a straight-line distance, corrected because a person does
+    not walk through buildings.
     """
     return km * FACTOR_CALLEJEO / VELOCIDAD_ANDANDO_KMH * 60
 
 
 def km_entre_tramos(ruta: list, paradas: dict) -> float:
-    """Lo que se anda al transbordar, cuando no se sube donde se bajó.
+    """The distance walked at a transfer, when you do not board where you alighted.
 
-    Con transbordos entre paradas cercanas el viaje deja de ser solo bus: hay metros a
-    pie en medio, y no contarlos volvería a hacer parecer gratis lo que no lo es.
+    With transfers between nearby stops, a trip is no longer only bus. There are metres
+    on foot in the middle. If they are not counted, they look free, and they are not.
     """
     total = 0.0
     for anterior, siguiente in zip(ruta, ruta[1:], strict=False):
@@ -162,11 +164,11 @@ def km_entre_tramos(ruta: list, paradas: dict) -> float:
 
 
 def vecindad(paradas: dict, radio_km: float = RADIO_TRANSBORDO_KM) -> dict[str, list]:
-    """Qué paradas se tocan andando: {parada: [(otra, km)]}.
+    """Which stops are within walking distance of each other: {stop: [(other, km)]}.
 
-    Es lo contrario de `paradas_cercanas`, que mide desde un punto suelto y recorre
-    todas las paradas en cada llamada. Aquí interesa la red entera de una vez, para
-    poder transbordar sin exigir que las dos líneas paren en el mismo sitio.
+    This is the opposite of `paradas_cercanas`, which measures from a single arbitrary
+    point and scans all the stops on every call. Here the whole network is needed at once, so
+    that a transfer does not require both lines to call at the same place.
     """
     ids = list(paradas)
     vecinas: dict[str, list] = {p: [] for p in ids}
@@ -182,12 +184,11 @@ def vecindad(paradas: dict, radio_km: float = RADIO_TRANSBORDO_KM) -> dict[str, 
 def paradas_cercanas(
     lat: float, lon: float, paradas: dict
 ) -> list[tuple[str, float]]:
-    """Las paradas a menos de RADIO_PARADAS_KM de un punto, como [(id, km)], de
-    más cerca a más lejos.
+    """The stops within RADIO_PARADAS_KM of a point, as [(id, km)], nearest first.
 
-    No se recorta la lista: quedarse con las más próximas escondía líneas enteras,
-    porque varias paradas pegadas suelen ser de las mismas líneas. El planificador
-    ya no paga por mirarlas todas, y el ranking decide si compensa andar.
+    The list is not trimmed. Keeping only the nearest stops hides whole lines, because
+    stops close together tend to serve the same lines. The planner does not pay to look
+    at all of them, and the ranking decides whether the walk is worth it.
     """
     cerca = []
     for parada, coords in paradas.items():
@@ -203,16 +204,15 @@ _PREFIJO_LINEA = re.compile(r"^L[ÍI]NEA\s+", re.IGNORECASE)
 
 
 def codigo_linea(texto: str) -> str:
-    """Nombre de línea de tiempos a código: quita el prefijo 'LÍNEA ' y
-    aplica alias BGM→BG.
+    """Line name from the arrivals feed to a line code: it removes the 'LÍNEA ' prefix,
+    in any case, and applies the BGM1 and BGM2 aliases.
     """
     codigo = _PREFIJO_LINEA.sub("", str(texto)).strip()
     return _ALIAS_LINEA.get(codigo, codigo)
 
 
 def minutos_espera(texto: str) -> float:
-    """Minutos hasta el próximo bus: '4 Minutos.' -> 4, 'Próximo.' -> 0,
-    sin número -> inf.
+    """Minutes to the next bus: '4 Minutos.' -> 4, 'Próximo.' -> 0, no number -> inf.
     """
     encontrado = re.search(r"\d+", str(texto))
     if encontrado:
@@ -223,8 +223,7 @@ def minutos_espera(texto: str) -> float:
 
 
 def esperas_por_linea(tiempos: list[dict]) -> dict[str, float]:
-    """De la respuesta de tiempos de una parada: {codigo de línea:
-    menor espera en minutos}.
+    """From the arrivals response of one stop: {line code: shortest wait in minutes}.
     """
     esperas: dict[str, float] = {}
     for fila in tiempos:
@@ -236,17 +235,17 @@ def esperas_por_linea(tiempos: list[dict]) -> dict[str, float]:
 
 
 class Puntuada(NamedTuple):
-    """Una ruta ya medida, con **dos** totales, que no son el mismo numero.
+    """A route that is already measured, with **two** totals that are not the same number.
 
-    `total` es lo que se ensena. Con la espera desconocida es un suelo, y la tarjeta lo
-    dice ("desde X min"): no se afirma lo que no se sabe.
+    `total` is what the user sees. With an unknown wait it is a floor, and the card says
+    so ("from X min"): the application does not assert what it does not know.
 
-    `comparable` es lo que decide el orden, quien domina a quien y que se descarta por
-    ser mucho peor. Ahi el suelo no vale: contar cero cuando no se sabe la espera hace
-    que la ruta peor conocida gane siempre, porque cero es el mejor numero posible. Una
-    ruta con "hasta 20 min de espera" llegaba a borrar de la pantalla otra de 15
-    minutos ciertos. La estimacion sigue la regla que ya se usaba en los transbordos:
-    media frecuencia si se publica, y si no una cifra fija.
+    `comparable` decides the order, which route dominates which, and what is dropped for
+    being much worse. A floor is wrong there. To count zero for an unknown wait makes
+    the least known route win every time, because zero is the best possible number. A
+    route with "up to 20 min of wait" can erase from the screen another route whose 15
+    minutes are certain. The estimate follows the rule that transfers already use: half the frequency
+    where it is published, and a fixed figure where it is not.
     """
 
     total: float
@@ -261,17 +260,18 @@ class Puntuada(NamedTuple):
 
 
 def _espera_estimada(espera: float | None, tope: float | None) -> float:
-    """Lo que se espera de verdad, para comparar. Nunca cero por no saberlo."""
+    """The wait that can be expected, for comparison. Never zero just because it is unknown."""
     if espera is not None:
         return espera
     return tope / 2 if tope else ESPERA_SIN_DATO_MIN
 
 
 def _orden(p: Puntuada) -> tuple:
-    """Por tiempo estimado, y a igualdad de tiempo menos transbordos.
+    """By estimated time, and with fewer legs when the time is equal.
 
-    El desempate no es cosmetico: sin el, "coge la M4 y luego otro bus" puede colarse
-    por delante de la M4 a secas y la regla que descarta rodeos no llega a verla.
+    The tie-break is not cosmetic. Without it, "take a line and then another bus" can
+    slip ahead of that same line on its own, and the rule that drops detours never sees
+    it.
     """
     return (p.comparable, len(p.ruta))
 
@@ -281,16 +281,18 @@ def _circula(p: Puntuada) -> bool:
 
 
 def _fusionar_por_paradas(puntuadas: list) -> list:
-    """Une las rutas que suben y bajan en las mismas paradas y solo cambian de línea.
+    """Merges the routes that board and alight at the same stops and only change line.
 
-    No son alternativas distintas: son el mismo viaje con varios buses que sirven, y
-    eso conviene saberlo porque se coge el primero que pase. Solo se fusionan las que
-    difieren en un único tramo; si cambian dos, no consta que esa combinación exista.
+    They are not different alternatives. They are the same trip with several buses that
+    serve it, and that is worth knowing, because you take the first one that comes. Only
+    routes that differ in a single leg are merged. If two legs differ, there is no
+    evidence that the combination exists.
     """
     grupos: dict[tuple, list] = {}
     for p in puntuadas:
-        # Una linea que no circula no es intercambiable con una que si: presentarlas
-        # juntas ("coge la primera que pase") seria mentir. Se agrupan por separado.
+        # A line that does not run is not interchangeable with one that does: to
+        # present them together ("take the first one that comes") would be a lie. They
+        # are grouped separately.
         clave = (tuple((t["subir"], t["bajar"]) for t in p.ruta),
                  p.aviso == "fuera_de_servicio")
         grupos.setdefault(clave, []).append(p)
@@ -318,16 +320,17 @@ def _fusionar_por_paradas(puntuadas: list) -> list:
 
 
 def _sin_dominadas(puntuadas: list) -> list:
-    """Quita las rutas a las que otra gana en todo lo que importa.
+    """Removes the routes that another route equals or beats on everything that matters.
 
-    Si otra llega antes, te hace andar menos y con menos transbordos, esta no es una
-    alternativa: no hay a quien le convenga. Descartarlas no exige decidir cuanto vale
-    andar frente a esperar, que seria opinable; basta con que otra le gane en las tres.
+    If another route arrives no later, makes you walk no further and has no more
+    transfers, this one is not an alternative: it suits nobody. The rule needs no view on what a minute walking
+    is worth against a minute waiting, which would be a matter of opinion. It is enough
+    that another route wins on all three.
 
-    Se compara con `comparable`, no con lo que se ensena. Y una ruta cuya espera no se
-    sabe **no puede descartar a una que si la sabe**, por buena que salga su estimacion:
-    eso seria borrar una certeza apoyandose en una suposicion. Puede ir delante, que es
-    lo que dice el valor esperado, pero la otra se sigue ofreciendo.
+    The comparison uses `comparable`, not what the user sees. And a route whose wait is
+    unknown **cannot discard one whose wait is known**, however good its estimate looks:
+    that would erase a certainty on the strength of an assumption. It can sort ahead,
+    which is what the expected value says, but the other one is still offered.
     """
     aceptadas: list[Puntuada] = []
     for p in puntuadas:
@@ -343,11 +346,11 @@ def _sin_dominadas(puntuadas: list) -> list:
 
 
 def _sin_rodeos(puntuadas: list) -> list:
-    """Quita las rutas que son otra mas corta con buses de propina.
+    """Removes the routes that are a shorter route with extra buses added on.
 
-    Si la M2 sola te deja, "M2 y luego otro bus" no es una alternativa: llegas mas
-    tarde al mismo sitio. Llegan ordenadas por tiempo, asi que cualquier ruta que
-    empiece por una ya aceptada es peor por definicion.
+    If one line alone takes you there, "that line and then another bus" is not an
+    alternative: you reach the same place later. The routes arrive ordered by time, so
+    any route that starts with an already accepted one is worse by definition.
     """
     aceptadas: list[Puntuada] = []
     lineas_ok: list[tuple] = []
@@ -361,15 +364,16 @@ def _sin_rodeos(puntuadas: list) -> list:
 
 
 def _una_por_combinacion(puntuadas: list) -> list:
-    """Una sola ruta por combinación de líneas: la más rápida.
+    """One route per combination of lines: the fastest one.
 
-    La misma combinación cogida en otra parada es el mismo viaje andando de más, no
-    una alternativa. Llegan ordenadas por tiempo, así que la primera es la buena.
+    The same combination boarded at another stop is the same trip with more walking, not
+    an alternative. The routes arrive ordered by time, so the first one is the one to
+    keep.
     """
     vistas: dict[tuple, Puntuada] = {}
     for p in puntuadas:
-        # Por el CONJUNTO de lineas de cada tramo: tras fusionar alternativas, "C2 o 5"
-        # y "5 o C2" son el mismo viaje aunque cambie cual figura primero.
+        # By the SET of lines of each leg: after alternatives are merged, "A or B"
+        # and "B or A" are the same trip, even if the one listed first changes.
         clave = tuple(
             frozenset([t["linea"], *t.get("alternativas", [])]) for t in p.ruta
         )
@@ -382,30 +386,30 @@ def _espera_en_transbordos(
     tipo_dia: str | None, ahora_min: int | None, desde_min: float,
     reales: dict | None = None,
 ) -> float:
-    """Lo que se espera en los transbordos, que antes no se contaba en absoluto.
+    """The wait at each transfer, read from live data instead of assumed.
 
-    El servicio da los tiempos de **cualquier** parada, no solo la de origen, así que
-    en el transbordo también se sabe cuándo pasa la otra línea. Con eso y la hora
-    estimada de llegada se calcula la espera de verdad, en lugar de suponerla.
+    The service gives arrivals for **any** stop, not only the origin one, so at the
+    transfer the arrival of the other line is known too. With that and the estimated
+    arrival time, the real wait is calculated instead of assumed.
 
-    Si ese bus se escapa —la llegada es una estimación, así que se exige el mismo
-    margen que al salir— se salta al siguiente sumando la frecuencia. Sin dato en vivo
-    queda media frecuencia, que es lo esperable al caer en un punto cualquiera del
-    horario; y sin frecuencia, una cifra fija: un transbordo nunca es gratis.
+    If that bus is missed — the arrival is an estimate, so it requires the same margin
+    as the departure — the next one is taken by adding the frequency. Without live data,
+    half the frequency applies, which is the expected wait at a random point of the
+    timetable. Without a frequency, a fixed figure applies: a transfer is never free.
     """
     total = 0.0
-    reloj = desde_min          # minutos desde ahora en que arranca el tramo en curso
+    reloj = desde_min          # minutes from now when the current leg starts
     for anterior, tramo in zip(ruta, ruta[1:], strict=False):
         reloj += minutos_viaje([anterior], red, paradas, reales)
         if anterior["bajar"] != tramo["subir"]:
-            # El transbordo es andando: hay que llegar antes de poder subir.
+            # The transfer is on foot: you must arrive before you can board.
             reloj += minutos_andando(km_entre_tramos([anterior, tramo], paradas))
         linea = tramo["linea"]
         intervalo = None
         if horarios and tipo_dia and ahora_min is not None:
             intervalo = frec.intervalo_min(horarios, linea, tipo_dia, ahora_min)
-        # Igual que al salir: se mira cuándo pasa cada autobús por esta parada, no solo
-        # el anunciado, y se coge el primero al que se llega a tiempo.
+        # The same as at the start: it looks at when each bus calls at this stop, not
+        # only the announced one, and takes the first one that can be reached in time.
         pasos = pasadas_en_parada(
             linea, tramo["subir"], esperas, red, paradas, reales, intervalo)
         alcanzables = [t for t in pasos if t >= reloj + MARGEN_LLEGADA_MIN]
@@ -422,19 +426,19 @@ def pasadas_en_parada(
     linea: str, parada: str, esperas: dict, red: dict, paradas: dict,
     reales: dict | None = None, intervalo: float | None = None,
 ) -> list[float]:
-    """Minutos desde ahora en que pasa cada autobús de esa línea por esa parada.
+    """Minutes from now at which each bus of that line calls at that stop.
 
-    El servicio informa de **una sola llegada por línea y parada**, pero ese autobús
-    recorre la línea entera: si pasa por una parada dentro de diez minutos, llega a la
-    siguiente diez más el trayecto. Así una observación en cualquier parada vale para
-    todas las demás de su línea.
+    The service reports **one single arrival per line and stop**, but that bus runs the
+    whole line: if it calls at one stop in ten minutes, it reaches the next one in ten
+    plus the ride. So one observation at any stop is good for every other stop on its
+    line.
 
-    Esto es lo que permite ver que dos paradas distintas te suben **al mismo vehículo**.
-    Comparando esperas sueltas parecía que una parada lejana "esperaba menos", y se
-    proponía andar el doble para acabar en el mismo autobús y llegar a la misma hora.
+    This is what shows that two different stops put you on **the same vehicle**. Compared
+    as separate waits, a far stop would appear to "wait less", and twice the walk would be
+    proposed to end up on the same bus and arrive at the same time.
 
-    Los valores negativos son buses que ya pasaron por aquí; se conservan porque sumando
-    la frecuencia dan los siguientes.
+    Negative values are buses that have already gone past here. They are kept because
+    adding the frequency to them gives the following ones.
     """
     seq = red.get(linea) or []
     if parada not in seq:
@@ -449,16 +453,16 @@ def pasadas_en_parada(
         if alli == aqui:
             vistas.append(float(observada))
         elif alli < aqui:
-            # El bus viene de allí: llega aquí más tarde.
+            # The bus comes from there, so it reaches here later.
             vistas.append(observada + minutos_viaje(
                 [_tramo_simple(linea, otra, parada)], red, paradas, reales))
         else:
-            # Ya pasó por aquí camino de allí.
+            # It has already gone past here on its way there.
             vistas.append(observada - minutos_viaje(
                 [_tramo_simple(linea, parada, otra)], red, paradas, reales))
     if not vistas:
         return []
-    # De cada observación salen también los buses siguientes, una frecuencia aparte.
+    # Each observation also gives the following buses, one frequency apart.
     salida = set()
     for t in vistas:
         salida.add(round(t, 2))
@@ -476,15 +480,15 @@ def _resolver_espera(
     linea: str, pasadas: list, hasta_la_parada: float, camina: bool,
     horarios: dict, tipo_dia: str | None, ahora_min: int | None,
 ) -> tuple:
-    """Cuánto se espera al bus, y qué se puede afirmar de ello.
+    """How long the wait for the bus is, and what can be asserted about it.
 
-    Devuelve (espera, tope, aviso). `espera` son minutos cuando se sostienen; `tope` es
-    lo más que puede tardar cuando no se sabe la espera pero sí cada cuánto pasa; y
-    `aviso` explica por qué no hay un número cerrado.
+    Returns (espera, tope, aviso). `espera` is minutes when a number can be supported.
+    `tope` is the most it can take when the wait is unknown but the frequency is not.
+    `aviso` explains why there is no closed number.
 
-    Recibe **cuándo pasa cada autobús** por esta parada, no solo el próximo, así que
-    elegir es quedarse con el primero al que se llega a tiempo. Si alguno pasó antes de
-    que pudieras estar allí, se dice: coges el siguiente, no el anunciado.
+    It receives **when each bus calls** at this stop, not only the next one, so the choice
+    is to keep the first bus that can be reached in time. If one goes past before you can
+    be there, the notice says so: you take the following one, not the announced one.
     """
     intervalo = None
     if horarios and tipo_dia and ahora_min is not None:
@@ -493,11 +497,11 @@ def _resolver_espera(
         intervalo = frec.intervalo_min(horarios, linea, tipo_dia, ahora_min)
 
     if not pasadas:
-        # Sin dato en vivo no se sabe cuándo pasó el último, pero la frecuencia acota
-        # la espera: nunca más de una vuelta.
+        # Without live data the last bus is unknown, but the frequency bounds the
+        # wait: never more than one full interval.
         return None, intervalo, "sin_datos"
 
-    # La estimación a pie es aproximada, así que no vale apurar al minuto.
+    # The walking estimate is approximate, so the timing must not be cut so fine.
     listo = hasta_la_parada + (MARGEN_LLEGADA_MIN if camina else 0)
     alcanzables = [t for t in pasadas if t >= listo]
     if not alcanzables:
@@ -507,7 +511,7 @@ def _resolver_espera(
     if ahora_min is not None and horarios:
         if frec.en_servicio(horarios, linea, tipo_dia, int(ahora_min + primera)) is False:
             return None, None, "fuera_de_servicio"
-    # Si había alguno antes de estar listo, ese se pierde y conviene decirlo.
+    # If one goes past before you can be ready, that bus is missed, and it is worth saying so.
     perdido = any(0 <= t < listo for t in pasadas)
     return primera - hasta_la_parada, None, ("no_llegas" if perdido else None)
 
@@ -524,18 +528,19 @@ def puntuar(
     ahora_min: int | None = None,
     reales: dict | None = None,
 ) -> list[dict]:
-    """Ordena las rutas por tiempo total estimado y filtra las mucho peores.
+    """Orders the routes by estimated total time and filters out the much worse ones.
 
-    El total es andar + esperar + bus. `esperas` va por parada de subida
-    ({id_parada: {linea: minutos}}), porque cada origen candidato tiene la suya.
-    `andando_origen` y `andando_destino` son {id_parada: km}; vacíos cuando el
-    usuario eligió paradas a mano y no hay caminata que contar.
+    The total is walk + wait + ride, with the transfer waits inside. `esperas` is keyed
+    ({stop_id: {line: minutes}}), because each candidate origin has its own.
+    `andando_origen` and `andando_destino` are {stop_id: km}. They are empty when the
+    user picks the stops by hand and there is no walk to count.
 
-    Cada ruta se devuelve como {"tramos", "total_min", "viaje_min", "espera_min",
-    "andando_min"}. `total_min` es la suma y la única fuente de verdad: el frontend
-    la pinta, no la recalcula. Con los minutos redondeados y None donde el dato no
-    se conoce. Sin coordenadas no se puede estimar nada: se devuelven en el orden
-    del planificador.
+    Each route is returned as {"tramos", "total_min", "viaje_min", "espera_min",
+    "espera_max_min", "espera_transbordo_min", "andando_min", "aviso_espera"}.
+    `total_min` is the sum and the single source of truth: the frontend
+    draws it and does not recalculate it. Minutes are rounded, and None marks a value
+    that is not known. Without coordinates nothing can be estimated, and the routes come
+    back in planner order.
     """
     andando_origen = andando_origen or {}
     andando_destino = andando_destino or {}
@@ -550,8 +555,8 @@ def puntuar(
             for ruta in rutas[:LIMITE_RUTAS]
         ]
 
-    # Cuando pasa cada bus por cada parada, calculado una vez por linea y parada:
-    # se repite en muchisimas rutas.
+    # When each bus calls at each stop, computed once per line and stop, because it
+    # repeats across very many routes.
     memoria: dict[tuple, list] = {}
 
     def pasadas(linea: str, parada: str) -> list:
@@ -580,15 +585,16 @@ def puntuar(
             subir in andando_origen,
             horarios or {}, tipo_dia, ahora_min,
         )
-        # Al transbordo se llega tras andar HASTA LA PRIMERA PARADA y viajar; la
-        # caminata del destino ocurre al bajarse del ultimo bus, no antes de subir al
-        # segundo. Contarla aqui adelantaba el reloj y elegia mal el bus del enlace.
+        # The transfer is reached after the walk TO THE FIRST STOP and the ride. The
+        # walk at the destination happens after leaving the last bus, not before
+        # boarding the second one. To count it here would advance the clock and pick
+        # the wrong connecting bus.
         transbordo = _espera_en_transbordos(
             ruta, red, paradas, esperas, horarios or {}, tipo_dia, ahora_min,
             hasta_la_parada + (espera or 0), reales,
         )
-        # Dos totales a proposito: el suelo que se ensena y el estimado que decide.
-        # Ver `Puntuada`.
+        # Two totals on purpose: the floor that is shown and the estimate that
+        # decides. See `Puntuada`.
         total = viaje + andando + (espera or 0) + transbordo
         comparable = viaje + andando + _espera_estimada(espera, tope) + transbordo
         puntuadas.append(Puntuada(
@@ -596,33 +602,33 @@ def puntuar(
 
     if not puntuadas:
         return []
-    # Una linea que no circula a esta hora no es una alternativa: fuera. Si no queda
-    # ninguna se devuelven igual, para poder explicar por que en vez de decir que no
-    # hay ruta, que seria falso: la hay, pero no ahora.
+    # A line that does not run at this hour is not an alternative, so it is dropped. If
+    # remain, they come back anyway, so the application can explain why instead of
+    # saying there is no route, which would be false: there is one, but not now.
     circulan = [p for p in puntuadas if _circula(p)]
     puntuadas = circulan or puntuadas
     puntuadas.sort(key=_orden)
-    # Se quitan las repetidas antes de filtrar y recortar: si no, las cuatro plazas
-    # se las llevan variantes del mismo viaje y las opciones buenas no se ven.
+    # Duplicates are removed before the filter and the trim. Otherwise variants of the
+    # same trip take the four slots and the good options are not seen.
     puntuadas = _sin_dominadas(
         _sin_rodeos(_una_por_combinacion(_fusionar_por_paradas(puntuadas)))
     )
     mejor = puntuadas[0].comparable
-    # Primero se descartan las mucho peores, y solo después se recorta: si no,
-    # una ruta buena podría quedar fuera del límite por culpa de otra que luego
-    # se descarta.
+    # The much worse routes are dropped first, and only then the list is trimmed.
+    # Otherwise a good route can fall outside the limit because of another one that
+    # is dropped later.
     aceptables = [p for p in puntuadas if p.comparable <= mejor * FACTOR_INFUMABLE]
     return [
         {
             "tramos": p.ruta,
-            # Con la espera desconocida el total es un suelo, no una promesa: el
-            # frontend lo dice ("desde X"), y `aviso_espera` explica por qué.
+            # With an unknown wait the total is a floor, not a promise: the frontend
+            # says so ("from X"), and `aviso_espera` explains why.
             "total_min": round(p.total),
             "viaje_min": round(p.viaje),
             "espera_min": round(p.espera) if p.espera is not None else None,
-            # Lo más que puede tardar cuando no se sabe la espera pero sí la frecuencia.
+            # The most it can take when the wait is unknown but the frequency is not.
             "espera_max_min": round(p.tope) if p.tope is not None else None,
-            # Lo que se espera en los transbordos, ya dentro del total.
+            # The wait at the transfers, already inside the total.
             "espera_transbordo_min": round(p.transbordo) if p.transbordo else None,
             "andando_min": round(p.andando) if hay_caminata else None,
             "aviso_espera": p.aviso,
@@ -632,6 +638,6 @@ def puntuar(
 
 
 def cargar_paradas(data_dir: Path = DATA_DIR) -> dict[str, tuple[float, float]]:
-    """De paradas.json: {id: (lat, lon)}."""
+    """From paradas.json: {id: (lat, lon)}."""
     datos = json.loads((data_dir / "paradas.json").read_text(encoding="utf-8"))
     return {p["id"]: (p["lat"], p["lon"]) for p in datos}

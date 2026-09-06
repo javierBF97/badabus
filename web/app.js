@@ -7,8 +7,8 @@
   const COLOR_FALLBACK = "#6b7280";
   const COLOR_BASE = "#1D9E75";
   const ALIAS_LINEA = { BGM1: "BG1", BGM2: "BG2" };
-  // Por qué no se puede dar un total cerrado. Nunca se inventa la espera del
-  // siguiente bus: el servicio solo da una llegada por línea.
+  // Why a closed total cannot be given. The wait for the next bus is never invented:
+  // the service gives only one arrival per line.
   const AVISOS_ESPERA = {
     no_llegas: "aviso_no_llegas",
     sin_datos: "aviso_sin_datos",
@@ -54,7 +54,7 @@
   let encuadrando = false;
   let pendienteEncuadre = false;
 
-  // ---------- Tema ----------
+  // ---------- Theme ----------
 
   function temaPreferido() {
     const guardado = localStorage.getItem("tema");
@@ -63,7 +63,7 @@
   }
 
   async function cargarClaveMapa() {
-    // Sin clave el mapa se ve con marca de agua, pero la app funciona igual.
+    // Without a key the map shows a watermark, but the application works the same.
     try {
       const resp = await fetch("/api/config");
       if (resp.ok) claveMapa = (await resp.json()).carto_key || "";
@@ -78,13 +78,13 @@
   }
 
 
-  // ---------- Idioma ----------
+  // ---------- Language ----------
 
-  // Diccionario plano, clave -> texto. Las piezas variables van entre llaves y las
-  // sustituye t(): asi una frase puede ordenarse distinto en cada idioma, que es
-  // justo lo que no deja hacer ir concatenando trozos sueltos.
-  // Los nombres de paradas y calles no se traducen: son datos, y en Badajoz la calle
-  // se llama igual en los dos idiomas.
+  // A flat dictionary, key -> text. The variable pieces go in braces and t() replaces
+  // them: a sentence can then be ordered differently in each language, which is exactly
+  // what concatenating loose pieces does not allow.
+  // Stop and street names are not translated: they are data, and in Badajoz a street
+  // has the same name in both languages.
   const TEXTOS = {
     es: {
       buscar_parada_ph: "Buscar parada…",
@@ -92,7 +92,7 @@
       como_llegar: "Cómo llegar",
       lineas: "Líneas",
       parada_cercana: "Parada más cercana",
-      // El boton lleva al *otro* idioma, asi que su etiqueta va en ese otro idioma.
+      // The button leads to the *other* language, so its label is in that other language.
       cambiar_idioma: "View in English",
       tema_claro: "Activar modo claro",
       tema_oscuro: "Activar modo oscuro",
@@ -237,9 +237,9 @@
     return texto;
   }
 
-  // El servicio devuelve su texto de llegada en castellano ("PRÓXIMO", "5 min"). En
-  // ingles se reescribe a partir de los minutos, que es el unico dato que lleva dentro;
-  // si no se entienden, se deja tal cual antes que inventarse otra cosa.
+  // The service returns its arrival text in Spanish ("PRÓXIMO", "5 min"). In English
+  // it is rewritten from the minutes, which is the only data it carries inside. If they
+  // cannot be read, the text is left as it is rather than invent something else.
   function textoLlegada(tiempo) {
     const bruto = String(tiempo || "");
     if (idioma === "es" || !bruto) return bruto;
@@ -257,7 +257,7 @@
       el.setAttribute("aria-label", t(el.dataset.i18nAria));
     }
     for (const el of document.querySelectorAll("[data-i18n-ph]")) el.placeholder = t(el.dataset.i18nPh);
-    // El boton ensena el idioma al que lleva, no en el que se esta.
+    // The button shows the language it leads to, not the one in use.
     const chip = document.getElementById("lang-texto");
     if (chip) chip.textContent = idioma === "es" ? "EN" : "ES";
     const toggle = document.getElementById("theme-toggle");
@@ -268,8 +268,8 @@
     repintarLoDinamico();
   }
 
-  // Lo que se pinta desde JS no lleva data-i18n, asi que hay que rehacerlo. Se hace
-  // solo con lo que hay en pantalla: sin ruta buscada no hay resultados que rehacer.
+  // What JS draws carries no data-i18n, so it has to be redrawn. Only what is on
+  // screen is redrawn: with no route searched there are no results to redraw.
   function repintarLoDinamico() {
     const texto = document.getElementById("btn-texto");
     if (texto && lineaSeleccionada) texto.textContent = lineaSeleccionada;
@@ -383,12 +383,12 @@
     avisoTimer = setTimeout(() => { toast.hidden = true; }, 3500);
   }
 
-  // ---------- Mapa y datos ----------
+  // ---------- Map and data ----------
 
   function crearMapa() {
-    // zoomSnap por cuartos: con niveles enteros el encuadre se queda hasta la mitad
-    // de corto, porque coge el último nivel que cabe entero. Los botones + y - siguen
-    // yendo de uno en uno (zoomDelta).
+    // zoomSnap in quarters: with whole levels the fit falls up to half short, because
+    // it takes the last level that fits whole. The + and - buttons still step one at a
+    // time (zoomDelta).
     map = L.map("map", { zoomSnap: 0.25 }).setView(CENTRO_BADAJOZ, ZOOM_INICIAL);
     capaTrazado = L.layerGroup().addTo(map);
     capaRuta = L.layerGroup().addTo(map);
@@ -403,7 +403,7 @@
     paradaActual = null;
     ultimasLlegadas = null;
     popupActual = null;
-    // Cierre diferido: si enseguida se abre otro popup (cambio de parada), no se limpia el vistazo.
+    // Deferred close: if another popup opens right away (a stop change), the preview is kept.
     clearTimeout(cierreVistazoPendiente);
     cierreVistazoPendiente = setTimeout(() => {
       if (popupActual) return;
@@ -432,7 +432,7 @@
   function estiloMarcador(parada) {
     const sirve = (codigo) => (parada.lineas || []).includes(codigo);
     if (rutaActiva) {
-      // Modo ruta: resalta origen/transbordo/destino (clicables) y difumina el resto en gris.
+      // Route mode: it highlights origin, transfer and destination (clickable) and fades the rest.
       if (parada.id === rutaActiva.origen) {
         return { radius: 9, weight: 3, color: "#ffffff", fillColor: "#1D9E75", fillOpacity: 1 };
       }
@@ -445,7 +445,7 @@
       return { radius: 4, weight: 1, color: "#d5d5d5", fillColor: "#e6e6e6", fillOpacity: 0.5 };
     }
     if (lineaVistazo) {
-      // Vistazo como capa: resalta la línea del vistazo y la del selector; difumina el resto.
+      // Preview as a layer: it highlights the preview line and the selected one, and fades the rest.
       if (sirve(lineaVistazo)) {
         return { radius: 7, weight: 2, color: "#ffffff", fillColor: colorLinea(lineaVistazo), fillOpacity: 0.95 };
       }
@@ -455,7 +455,7 @@
       return { radius: 5, weight: 1, color: "#cfcfcf", fillColor: "#e2e2e2", fillOpacity: 0.4 };
     }
     if (lineaSeleccionada) {
-      // Filtro fijo: solo las paradas de la línea (y la parada abierta como excepción).
+      // Fixed filter: only the stops of the line, with the open stop as an exception.
       if (sirve(lineaSeleccionada)) {
         return { radius: 8, weight: 2, color: "#ffffff", fillColor: colorLinea(lineaSeleccionada), fillOpacity: 0.95 };
       }
@@ -528,7 +528,7 @@
     }
   }
 
-  // ---------- Tiempos (popup en el mapa) ----------
+  // ---------- Arrivals (map popup) ----------
 
   function filasLlegadas(llegadas) {
     const ordenadas = [...llegadas].sort((a, b) => minutosDe(a.tiempo) - minutosDe(b.tiempo));
@@ -643,7 +643,7 @@
     }
   }
 
-  // ---------- Filtro por línea ----------
+  // ---------- Filter by line ----------
 
   function tipoDiaLocal(fecha) {
     const diaSemana = fecha.getDay(); // 0 domingo, 6 sábado
@@ -673,7 +673,7 @@
     todas.textContent = t("todas");
     todas.addEventListener("click", () => seleccionarLinea(""));
     contenedor.appendChild(todas);
-    // Sin datos del día (ausente o lista vacía) se pintan todas: nunca se esconde una línea por un fallo.
+    // With no day data, missing or an empty list, all are drawn: a line is never hidden by a fault.
     const activas = dias[tipoDia];
     const codigos = Object.keys(lineas)
       .filter((codigo) => !activas || activas.length === 0 || activas.includes(codigo))
@@ -739,7 +739,7 @@
     if (estabaAbierto) document.getElementById("btn-lineas").focus();
   }
 
-  // ---------- Mi parada ----------
+  // ---------- Nearest stop ----------
 
   function localizarParadaMasCercana() {
     if (!navigator.geolocation) {
@@ -762,7 +762,7 @@
     );
   }
 
-  // ---------- Buscador de paradas ----------
+  // ---------- Stop search ----------
 
   function buscarParadas(texto) {
     const consulta = texto.trim().toLowerCase();
@@ -818,10 +818,10 @@
     seleccionarParada(parada);
   }
 
-  // ---------- Cómo llegar ----------
+  // ---------- Directions ----------
 
   function abrirComoLlegar() {
-    // El trazado de la línea elegida se solaparía con el de la ruta: se quita.
+    // The shape of the selected line would overlap the route, so it is removed.
     if (lineaSeleccionada || lineaVistazo) seleccionarLinea("");
     document.getElementById("panel-comollegar").hidden = false;
     document.getElementById("scrim-comollegar").hidden = false;
@@ -830,8 +830,8 @@
     renderSelector("destino");
   }
 
-  // Invertir es un caso de todos los dias: se mira la ida y acto seguido la vuelta.
-  // Sin boton hay que reescribir los dos extremos a mano.
+  // Swapping is an everyday case: you look up the outward trip and then the return
+  // one. Without a button, both endpoints have to be retyped by hand.
   function invertirExtremos() {
     const antes = origenSel;
     origenSel = destinoSel;
@@ -842,7 +842,7 @@
       buscarRuta();
       return;
     }
-    // Con un extremo suelto, lo que hay en pantalla ya no es de este viaje.
+    // With one endpoint loose, what is on screen no longer belongs to this trip.
     limpiarResultados();
   }
 
@@ -870,7 +870,7 @@
     return (paradaPorId[id] || {}).nombre || id;
   }
 
-  // La selección puede ser una parada elegida a mano o un punto del mapa/una dirección:
+  // A selection can be a stop picked by hand, or a point on the map or an address:
   // {tipo: "parada", id, nombre} | {tipo: "punto", lat, lon, nombre}
   function fijarSeleccion(campo, seleccion) {
     if (campo === "origen") origenSel = seleccion;
@@ -921,7 +921,7 @@
   }
 
   const temporizadoresBusqueda = {};
-  // Texto ya buscado -> direcciones. Repetir una búsqueda sale al instante y sin petición.
+  // Text already searched -> addresses. To repeat a search is instant and costs no request.
   const cacheDirecciones = new Map();
 
   function recordarDirecciones(clave, sitios) {
@@ -931,11 +931,11 @@
     cacheDirecciones.set(clave, sitios);
   }
 
-  // El geocodificador admite buscar mientras se escribe, así que ya no hace falta el
-  // hueco de un segundo entre peticiones que exigía el anterior. Queda una espera corta
-  // por cortesía —una petición por tecla sería abusar de un servicio gratuito— y la
-  // caché, que hace instantáneo repetir una búsqueda. Al volver se comprueba que el
-  // texto siga igual: una respuesta lenta de antes podría pisar los resultados de ahora.
+  // The geocoder allows search as you type, so no forced gap between requests is
+  // needed. A short delay remains out of courtesy — one request per keystroke would
+  // abuse a free service — and so does the cache, which makes a repeated search
+  // instant. On return, the text is checked to be the same: a slow answer from an
+  // earlier query could overwrite the current results.
   function buscarDirecciones(campo, texto, sigueVigente, alTener) {
     clearTimeout(temporizadoresBusqueda[campo]);
     const clave = texto.trim().toLowerCase();
@@ -960,7 +960,7 @@
       } catch (err) {
         /* sin direcciones: las paradas siguen saliendo */
       }
-      // Un fallo no se guarda: si no, un corte de red dejaría ese texto vacío para siempre.
+      // A failure is not cached: a network drop would otherwise leave that text empty forever.
       if (respondio) recordarDirecciones(clave, encontradas);
       if (sigueVigente()) alTener("listo", encontradas);
     }, BUSQUEDA_ESPERA_MS);
@@ -975,9 +975,10 @@
         cont.hidden = true;
         return;
       }
-      // Las direcciones van primero porque son lo que se busca; las paradas salen al
-      // instante y las empujaban fuera de la vista. Mientras llegan se deja puesta su
-      // cabecera, para que las paradas no salten hacia abajo justo al ir a tocarlas.
+      // Addresses go first, because they are what is being searched. Stops appear
+      // instantly and push the addresses out of sight. While the addresses arrive
+      // their heading stays in place, so the stops do not jump down just as you reach
+      // to tap them.
       if (direcciones.length || buscando) cont.appendChild(cabeceraGrupo(t("direcciones")));
       for (const sitio of direcciones) {
         cont.appendChild(
@@ -993,7 +994,7 @@
       }
       cont.hidden = false;
     };
-    // El input puede haber cambiado cuando llegue la respuesta: solo se pinta si sigue igual.
+    // The input can change before the answer arrives: it is drawn only if it is still the same.
     const inputActual = cont.parentElement.querySelector(".cl-input");
     buscarDirecciones(campo, texto, () => inputActual && inputActual.value === texto, pintar);
   }
@@ -1025,7 +1026,7 @@
   }
 
   function activarModoMapa(campo) {
-    // Solo oculta el panel para poder tocar el mapa; conserva el estado (no es salir).
+    // It only hides the panel so the map can be touched. The state is kept: this is not an exit.
     modoMapa = campo;
     document.getElementById("panel-comollegar").hidden = true;
     document.getElementById("scrim-comollegar").hidden = true;
@@ -1033,7 +1034,7 @@
   }
 
   async function alClicarElMapa(evento) {
-    // Solo cuando se está eligiendo origen o destino; si no, un clic en el mapa no hace nada.
+    // Only while an origin or a destination is being picked. Otherwise a map click does nothing.
     if (!modoMapa) return;
     const campo = modoMapa;
     modoMapa = null;
@@ -1044,7 +1045,7 @@
       const resp = await fetch(`/api/direccion?lat=${lat}&lon=${lng}`);
       if (resp.ok) {
         const { nombre } = await resp.json();
-        // Puede haber cambiado la selección mientras llegaba la respuesta.
+        // The selection can have changed while the answer was on its way.
         const actual = campo === "origen" ? origenSel : destinoSel;
         if (nombre && actual && actual.tipo === "punto" && actual.lat === lat && actual.lon === lng) {
           fijarPunto(campo, lat, lng, nombre);
@@ -1102,10 +1103,10 @@
     return `${prefijo}_lat=${encodeURIComponent(sel.lat)}&${prefijo}_lon=${encodeURIComponent(sel.lon)}`;
   }
 
-  // Un tramo puede tener varias líneas que lo hacen igual: se pintan todas, porque
-  // sirve la primera que pase y eso acorta la espera.
-  // Un transbordo puede ser en la misma parada o exigir andar hasta otra cercana.
-  // Decir "transbordo en X" cuando hay que caminar dejaria fuera lo que mas importa.
+  // One leg can have several lines that serve it alike: all of them are drawn,
+  // because the first one that comes will do, and that shortens the wait.
+  // A transfer can be at the same stop, or it can require a walk to a nearby one. To
+  // say "change at X" when there is a walk would leave out what matters most.
   function textoTransbordo(tramo, siguiente) {
     if (tramo.bajar === siguiente.subir) {
       const donde = escaparHtml(nombreParada(tramo.bajar));
@@ -1133,11 +1134,11 @@
   }
 
   function textoMinutos(ruta) {
-    // El total lo calcula el servidor: aquí solo se pinta, para que no haya dos
-    // fórmulas que puedan desincronizarse.
+    // The server calculates the total. Here it is only drawn, so that there are not
+    // two formulas that can drift apart.
     if (ruta.total_min == null) return "";
-    // Con la espera dentro el total se sostiene, aunque el bus sea el siguiente y no
-    // el anunciado. Sin ella es un suelo, y "desde" lo dice.
+    // With the wait inside, the total holds up, even if the bus is the following one
+    // and not the announced one. Without it the total is a floor, and "from" says so.
     const cerrado = ruta.espera_min != null;
     const partes = [t(cerrado ? "total_aprox" : "total_desde", { n: ruta.total_min })];
     if (ruta.andando_min) partes.push(t("min_andando", { n: ruta.andando_min }));
@@ -1146,7 +1147,7 @@
       const cual = ruta.aviso_espera === "no_llegas" ? "siguiente_linea" : "proximo_linea";
       partes.push(t(cual, { linea, n: ruta.espera_min }));
     } else if (ruta.espera_max_min != null) {
-      // Sin saber cuándo pasó el último, la frecuencia acota lo que puede tardar.
+      // With no record of the last bus, the frequency bounds how long it can take.
       partes.push(t("espera_max", { n: ruta.espera_max_min }));
     }
     if (ruta.espera_transbordo_min != null) {
@@ -1157,8 +1158,8 @@
     return ` <span class="cl-ruta-min">· ${partes.join(" · ")}</span>${cola}`;
   }
 
-  // Andar gana en los trayectos cortos, y si no gana sigue siendo util saber que
-  // existe: cuantos minutos son y si compensa esperar al bus.
+  // Walking wins on short trips, and where it does not win it is still useful to know
+  // that it exists: how many minutes it is, and whether waiting for the bus pays off.
   function tarjetaAPie(aPie, rutas) {
     if (!aPie || aPie.minutos == null) return "";
     const mejor = rutas.length ? rutas[0].total_min : null;
@@ -1171,7 +1172,7 @@
   }
 
   function renderRutas(rutas, aPie) {
-    // Se guardan para poder repintarlas al cambiar de idioma sin volver a preguntar.
+    // They are kept so they can be redrawn on a language change without asking again.
     ultimasRutas = rutas;
     ultimoAPie = aPie;
     const cont = document.getElementById("cl-resultados");
@@ -1213,14 +1214,15 @@
     dibujarRuta(rutas[0].tramos);
   }
 
-  // ---------- Encuadre del mapa ----------
+  // ---------- Map framing ----------
 
-  // Los paneles van *encima* del mapa: en movil como hoja inferior a todo lo ancho, en
-  // escritorio como tarjeta pegada a la derecha. Encuadrar contra el mapa entero deja la
-  // ruta medio tapada, asi que se descuenta lo que ocupan y se centra en lo que queda.
+  // The panels sit *on top of* the map: on a phone as a bottom sheet across the full
+  // width, on a desktop as a card against the right edge. To fit against the whole map
+  // leaves the route half covered, so what they take is subtracted and the route is
+  // centred in what remains.
   const MARGEN_ENCUADRE = 40;
-  // Si el panel tapa casi todo, encuadrar contra la rendija que sobra daria un zoom
-  // absurdo: no se le cede mas de esta parte de la pantalla.
+  // If a panel covers almost everything, to fit against the strip that is left would
+  // give an absurd zoom: no more than this share of the screen is given up to it.
   const MAXIMO_TAPADO = 0.6;
 
   function loQueTapanLosPaneles() {
@@ -1232,7 +1234,7 @@
       if (!panel || panel.hidden) continue;
       const caja = panel.getBoundingClientRect();
       if (!caja.width || !caja.height) continue;
-      // A todo lo ancho es la hoja de abajo; si no, la tarjeta de la derecha.
+      // Full width means the bottom sheet. Otherwise it is the card on the right.
       if (caja.width > mapa.width * 0.8) abajo = Math.max(abajo, mapa.bottom - caja.top);
       else derecha = Math.max(derecha, mapa.right - caja.left);
     }
@@ -1246,8 +1248,8 @@
     if (limites) limitesEncuadre = limites;
     if (!limitesEncuadre || !limitesEncuadre.isValid()) return;
     const tapado = loQueTapanLosPaneles();
-    // Sin animacion a proposito: asi el movimiento es sincrono y se distingue de uno
-    // del usuario, que es lo que apaga el reencuadre automatico.
+    // No animation on purpose: the move is then synchronous and can be told apart
+    // from a move by the user, which is what turns the automatic framing off.
     encuadrando = true;
     map.fitBounds(limitesEncuadre, {
       paddingTopLeft: [MARGEN_ENCUADRE, MARGEN_ENCUADRE],
@@ -1257,9 +1259,10 @@
     encuadrando = false;
   }
 
-  // La hoja de resultados cambia de alto sola: al llegar las rutas, al arrastrarla, al
-  // girar el movil. Con ella cambia el hueco visible, asi que hay que volver a encuadrar
-  // — salvo que el usuario ya haya movido el mapa a mano, y entonces manda el.
+  // The results sheet changes height on its own: when the routes arrive, when it is
+  // dragged, when the phone turns. The visible gap changes with it, so the map has to
+  // be framed again — unless the user has already moved the map by hand, and then the
+  // user rules.
   function reencuadrar() {
     if (!encuadreAutomatico || pendienteEncuadre) return;
     pendienteEncuadre = true;
@@ -1290,9 +1293,9 @@
       if (puntos && puntos.length >= 2) {
         L.polyline(puntos, { color: colorLinea(tramo.linea), weight: 5, opacity: 0.9 }).addTo(grupo);
       }
-      // Un transbordo andando deja un hueco entre un tramo y el siguiente. Sin nada
-      // en medio la ruta parece rota, asi que se une con una recta punteada: no es el
-      // camino real (eso pediria un ruteador peatonal), pero si por donde hay que ir.
+      // A transfer on foot leaves a gap between one leg and the next. With nothing
+      // in between the route looks broken, so a dashed straight line joins them: it is
+      // not the real path, which would need a pedestrian router, but it is the way.
       const siguiente = ruta[i + 1];
       if (siguiente && siguiente.subir !== tramo.bajar) {
         const a = paradaPorId[tramo.bajar];
@@ -1304,7 +1307,7 @@
         }
       }
     }
-    // Las paradas clave incluyen aquella hasta la que se anda: es donde se coge el bus.
+    // The key stops include the one you walk to: that is where the bus is boarded.
     const clave = new Set();
     for (const [i, tramo] of ruta.entries()) {
       if (i < ruta.length - 1) clave.add(tramo.bajar);
@@ -1317,10 +1320,10 @@
     };
     document.body.classList.add("ruta-activa");
     if (grupo.getLayers().length) grupo.addTo(capaRuta);
-    // Los marcadores de origen/transbordo/destino los pinta refrescarMarcadores (clicables).
+    // refrescarMarcadores draws the origin, transfer and destination markers (clickable).
     refrescarMarcadores();
     if (grupo.getLayers().length) {
-      // Ruta nueva: se vuelve a mandar el encuadre aunque el usuario hubiera movido el mapa.
+      // A new route: the framing takes over again, even if the user had moved the map.
       encuadreAutomatico = true;
       encuadrar(grupo.getBounds());
     }
@@ -1348,10 +1351,10 @@
     );
   }
 
-  // Alineamiento monótono óptimo (programación dinámica) de las paradas sobre una polilínea:
-  // para cada parada, el índice del punto que le corresponde, en orden no decreciente.
-  // Al usar toda la secuencia de la línea, el contexto global resuelve las ambigüedades
-  // de las calles por las que se pasa dos veces (ida y vuelta).
+  // Optimal monotonic alignment (dynamic programming) of the stops onto a polyline:
+  // for each stop, the index of the point that matches it, in non-decreasing order.
+  // Using the whole line sequence, the global context resolves the ambiguity of the
+  // streets that a line runs through twice, outward and back.
   function alinear(puntos, anclas) {
     const n = puntos.length;
     const k = anclas.length;
@@ -1381,8 +1384,8 @@
     return { idx, coste };
   }
 
-  // Trazado canónico de una línea: sus tramos de shape ordenados y orientados de la forma
-  // que mejor explica su secuencia de paradas, con el punto que corresponde a cada parada.
+  // The canonical shape of a line: its shape segments ordered and oriented in the way
+  // that best explains its stop sequence, with the point that matches each stop.
   function canonicoDe(linea) {
     if (linea in canonicoLinea) return canonicoLinea[linea];
     const trazado = shapes[linea] || {};
@@ -1424,12 +1427,13 @@
     if (rel < 0) return null;
     const canonico = canonicoDe(linea);
     if (!canonico) return null;
-    // El alineamiento es monótono, así que el tramo ya sale en orden de marcha.
+    // The alignment is monotonic, so the leg already comes out in order of travel.
     const j = i + rel + 1;
     if (canonico.porSeq[i] == null || canonico.porSeq[j] == null) return null;
     if (canonico.porSeq[j] < canonico.porSeq[i]) return null;
-    // Se recorre el trazado insertando cada parada en su sitio, para que la ruta pase
-    // exactamente por todas (si no, quedan desvíos y huecos en los transbordos).
+    // The shape is walked and each stop is inserted in its place, so that the route
+    // passes exactly through all of them. Otherwise detours and gaps appear at the
+    // transfers.
     const tramo = [];
     let previo = null;
     for (let z = i; z <= j; z++) {
@@ -1451,7 +1455,7 @@
     return dlat * dlat + dlon * dlon;
   }
 
-  // ---------- Inicio ----------
+  // ---------- Start ----------
 
   function inicializar() {
     document.getElementById("theme-toggle").addEventListener("click", alternarTema);
@@ -1479,7 +1483,7 @@
       }
     });
 
-    // La clave va primero: el mapa se crea con ella para no recargar los tiles después.
+    // The key goes first: the map is created with it, so the tiles are not reloaded later.
     cargarClaveMapa()
       .then(() => {
         crearMapa();
