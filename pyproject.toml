@@ -1,7 +1,7 @@
 [project]
 name = "badabus"
 version = "0.1.0"
-description = "Proyecto exploratorio, no oficial, sobre los datos del servicio de autobús urbano de Badajoz."
+description = "Exploratory, unofficial project on the data of the Badajoz city bus service."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []

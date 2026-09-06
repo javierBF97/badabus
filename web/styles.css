@@ -315,7 +315,7 @@ button:hover {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  /* Con scroll propio: sin tope, los últimos resultados se salían del panel. */
+  /* Its own scroll: with no cap, the last results fell outside the panel. */
   max-height: 46vh;
   overflow-y: auto;
   z-index: 1700;
@@ -350,8 +350,8 @@ button:hover {
   border-radius: 8px;
 }
 
-/* Invertir origen y destino: entre los dos campos y pegado a la derecha, para no
-   mover las etiquetas de sitio ni quitarle ancho al campo que se esta escribiendo. */
+/* Swap start and destination: between the two fields and against the right edge, so
+   the labels do not move and the field being typed in keeps its width. */
 .cl-invertir {
   display: block;
   margin: -6px 0 10px auto;
@@ -446,14 +446,14 @@ button:hover {
   padding: 4px 0 4px 8px;
 }
 
-/* Con una ruta en pantalla, se ocultan buscador, líneas y parada más cercana. */
+/* With a route on screen, the search box, the lines and the nearest stop are hidden. */
 body.ruta-activa .busqueda,
 body.ruta-activa #btn-lineas,
 body.ruta-activa #locate {
   display: none;
 }
 
-/* Con una ruta activa, el scrim no debe tapar el mapa (o las paradas no se pueden clicar). */
+/* With a route active, the scrim must not cover the map, or the stops cannot be clicked. */
 body.ruta-activa #scrim-comollegar {
   display: none;
 }

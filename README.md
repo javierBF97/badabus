@@ -239,8 +239,7 @@ the live data, which is the reliable source.
 **This file is not in the repository**: it belongs to the operator and this project does not
 redistribute their data, same as the rest of `data/`. The application works without it — the waits
 stay unknown, the cards say so, and it falls back the same way it does when the live data fails.
-Published as images with no version, the timetables expire without warning; the `transcrito` field
-records the date each was copied.
+Published as images with no version, the timetables expire without warning.
 
 ## 6. Transfers on foot
 

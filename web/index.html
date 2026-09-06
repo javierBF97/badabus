@@ -11,8 +11,8 @@
         ? guardado
         : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro");
       document.documentElement.dataset.theme = tema;
-      // El idioma tambien antes de pintar: si no, los textos salen en castellano y
-      // saltan a ingles al arrancar el script.
+      // The language goes in before the first paint too: otherwise the texts come out
+      // in Spanish and jump to English when the script starts.
       var idioma = localStorage.getItem("idioma");
       if (idioma !== "es" && idioma !== "en") {
         idioma = String(navigator.language || "es").toLowerCase().startsWith("en") ? "en" : "es";
